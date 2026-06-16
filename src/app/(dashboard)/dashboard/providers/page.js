@@ -244,8 +244,19 @@ export default function ProvidersPage() {
     };
   }, [loading, connections]);
 
+  const getProviderAuthTypes = (providerId, sectionAuthType) => {
+    const provider =
+      APIKEY_PROVIDERS[providerId] || OAUTH_PROVIDERS[providerId];
+    const authModes = provider?.authModes;
+    // Dual-auth providers (e.g. glm, xai): one card, count oauth + apikey connections.
+    if (authModes?.includes("oauth") && authModes?.includes("apikey")) {
+      return authModes;
+    }
+    return [sectionAuthType];
+  };
+
   const getProviderStats = (providerId, authType) => {
-    const authTypes = Array.isArray(authType) ? authType : [authType];
+    const authTypes = getProviderAuthTypes(providerId, authType);
     const providerConnections = connections.filter(
       (c) => c.provider === providerId && authTypes.includes(c.authType),
     );
@@ -291,12 +302,16 @@ export default function ProvidersPage() {
   // Toggle all connections for a provider on/off. authType may be a single
   // string or an array (kiro counts oauth + api_key/apikey together).
   const handleToggleProvider = async (providerId, authType, newActive) => {
-    const authTypes = Array.isArray(authType) ? authType : [authType];
-    const matches = (c) =>
-      c.provider === providerId && authTypes.includes(c.authType);
-    const providerConns = connections.filter(matches);
+    const authTypes = getProviderAuthTypes(providerId, authType);
+    const providerConns = connections.filter(
+      (c) => c.provider === providerId && authTypes.includes(c.authType),
+    );
     setConnections((prev) =>
-      prev.map((c) => (matches(c) ? { ...c, isActive: newActive } : c)),
+      prev.map((c) =>
+        c.provider === providerId && authTypes.includes(c.authType)
+          ? { ...c, isActive: newActive }
+          : c,
+      ),
     );
     await Promise.allSettled(
       providerConns.map((c) =>

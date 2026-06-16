@@ -161,7 +161,15 @@ export async function createProviderConnection(data) {
       .map(rowToConn);
 
     let existing = null;
-    if (data.authType === "oauth" && data.email) {
+    const incomingZcodeUserId = data.providerSpecificData?.zcodeUserId;
+    if (data.authType === "oauth" && data.provider === "glm" && incomingZcodeUserId) {
+      existing = all.find(
+        (c) =>
+          c.authType === "oauth" &&
+          c.providerSpecificData?.zcodeUserId === incomingZcodeUserId
+      );
+    }
+    if (!existing && data.authType === "oauth" && data.email) {
       const incomingUsername = data.providerSpecificData?.username;
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find((c) => {

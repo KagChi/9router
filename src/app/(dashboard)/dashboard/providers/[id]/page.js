@@ -17,6 +17,7 @@ import {
   CursorAuthModal,
   IFlowCookieModal,
   GitLabAuthModal,
+  ZaiOAuthModal,
   Toggle,
   Select,
   EditConnectionModal,
@@ -247,6 +248,7 @@ export default function ProviderDetailPage() {
     providerId === "xai" ? "Grok Build OAuth"
     : providerId === "grok-cli" ? "Grok CLI Device Login"
     : providerId === "kimi" ? "Kimi Coding OAuth"
+    : providerId === "glm" ? "Z.AI OAuth"
     : "OAuth";
   const apiKeyConnectionLabel =
     providerId === "xai" ? "xAI API Key"
@@ -2259,6 +2261,13 @@ export default function ProviderDetailPage() {
         />
       ) : providerId === "gitlab" ? (
         <GitLabAuthModal
+          isOpen={showOAuthModal}
+          providerInfo={providerInfo}
+          onSuccess={handleOAuthSuccess}
+          onClose={() => setShowOAuthModal(false)}
+        />
+      ) : providerId === "glm" ? (
+        <ZaiOAuthModal
           isOpen={showOAuthModal}
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}

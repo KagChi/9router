@@ -2,6 +2,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import {
   refreshXaiToken,
+  refreshGlmToken,
   refreshAccessToken,
   refreshKimiToken,
   refreshClineToken,
@@ -186,6 +187,7 @@ const REFRESH_HANDLERS = {
   "kimi-coding": (c, log) => refreshKimiToken(c.refreshToken, c, log),
   autoclaw: (c, log) =>
     refreshAutoClawToken(c.refreshToken, c.providerSpecificData, log),
+  glm: (c, log) => refreshGlmToken(c.refreshToken, c, log),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler,
 };
