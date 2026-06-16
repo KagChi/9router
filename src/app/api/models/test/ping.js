@@ -39,6 +39,15 @@ function createSilentWavFile() {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
+function getPingTimeoutMs(model) {
+  const normalized = String(model || "").toLowerCase();
+  // Z.AI Coding Plan solves Aliyun captcha in CloakBrowser on first request (~60–120s).
+  if (normalized.startsWith("glm/") || normalized.startsWith("glm-cn/")) {
+    return 120_000;
+  }
+  return 15_000;
+}
+
 async function getInternalHeaders() {
   let apiKey = null;
   try {
@@ -54,6 +63,7 @@ async function getInternalHeaders() {
 
 export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`) {
   const headers = await getInternalHeaders();
+  const timeoutMs = getPingTimeoutMs(model);
   const start = Date.now();
 
   if (kind === "embedding") {
@@ -61,7 +71,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       method: "POST",
       headers,
       body: JSON.stringify({ model, input: "test" }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -84,7 +94,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       method: "POST",
       headers,
       body: JSON.stringify({ model, prompt: "test" }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -113,7 +123,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       method: "POST",
       headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type")),
       body: form,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -175,7 +185,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       stream: false,
       messages: [{ role: "user", content: "hi" }],
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const latencyMs = Date.now() - start;
 

@@ -28,8 +28,10 @@ import WindsurfExecutor from "./windsurf.js";
 import { AutoClawExecutor } from "./autoclaw.js";
 import { DefaultExecutor } from "./default.js";
 import { DevinCliExecutor } from "./devin-cli.js";
+import { GlmExecutor } from "./glm.js";
 
 const executors = {
+  glm: new GlmExecutor(),
   antigravity: new AntigravityExecutor(),
   azure: new AzureExecutor(),
   "gemini-cli": new GeminiCLIExecutor(),
@@ -111,3 +113,4 @@ export { default as ZedExecutor } from "./zed.js";
 export { default as WindsurfExecutor } from "./windsurf.js";
 export { DevinCliExecutor } from "./devin-cli.js";
 export { AutoClawExecutor } from "./autoclaw.js";
+export { GlmExecutor } from "./glm.js";
