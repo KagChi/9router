@@ -126,12 +126,15 @@ export async function POST(request) {
 
     let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
 
-    // Compatible LLM nodes support multiple API-key connections (key pool); runtime
-    // rotates/fails over via getProviderCredentials. Embedding nodes stay single-connection.
+    // Custom embedding nodes allow exactly one connection. OpenAI/Anthropic compatible
+    // nodes allow multiple API-key connections (one providerConnection per key).
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
+      }
+      if (node.type !== "openai-compatible") {
+        return NextResponse.json({ error: "Provider node type does not match OpenAI Compatible prefix" }, { status: 400 });
       }
       providerSpecificData = {
         prefix: node.prefix,
@@ -143,6 +146,9 @@ export async function POST(request) {
       const node = await getProviderNodeById(provider);
       if (!node) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
+      }
+      if (node.type !== "anthropic-compatible") {
+        return NextResponse.json({ error: "Provider node type does not match Anthropic Compatible prefix" }, { status: 400 });
       }
       providerSpecificData = {
         prefix: node.prefix,
