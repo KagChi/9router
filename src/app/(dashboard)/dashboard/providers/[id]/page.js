@@ -1668,6 +1668,18 @@ export default function ProviderDetailPage() {
                 </div>
               )}
               {connectionsList}
+              {isCompatible && (
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
+                  <Button
+                    size="sm"
+                    icon="add"
+                    onClick={triggerApiKeyConnection}
+                    className="w-full sm:w-auto"
+                  >
+                    Add API Key
+                  </Button>
+                </div>
+              )}
               {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {providerId === "iflow" && (
