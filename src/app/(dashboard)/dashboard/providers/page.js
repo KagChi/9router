@@ -470,7 +470,11 @@ export default function ProvidersPage() {
             // Kiro's headless api-key flow persists authType "api_key" (underscore),
             // while generic apikey providers use "apikey" — include both spellings.
             const freeAuthTypes =
-              key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+              key === "kiro"
+                ? ["oauth", "apikey", "api_key"]
+                : key === "zenmux-free"
+                  ? "cookie"
+                  : "oauth";
             return (
               <ProviderCard
                 key={key}
@@ -651,7 +655,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               }}
             >
               <ProviderIcon
-                src={`/providers/${provider.id}.png`}
+                providerId={provider.id}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
