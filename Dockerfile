@@ -41,13 +41,15 @@ COPY --from=builder /app/src/mitm ./src/mitm
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # Ensure `next` is available at runtime in case tracing did not include it.
 COPY --from=builder /app/node_modules/next ./node_modules/next
-# Copy Camoufox browser binary if downloaded during build
-COPY --from=builder /root/.camoufox /app/data-home/.camoufox 2>/dev/null || true
-COPY --from=builder /app/node_modules/camoufox-js ./node_modules/camoufox-js 2>/dev/null || true
-
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
   ln -sf /app/data-home /root/.9router 2>/dev/null || true
+
+# Copy Camoufox browser binary and package if available from builder stage
+RUN --mount=type=bind,from=builder,source=/root/.camoufox,target=/tmp/camoufox \
+  --mount=type=bind,from=builder,source=/app/node_modules/camoufox-js,target=/tmp/camoufox-js \
+  (cp -r /tmp/camoufox /app/data-home/.camoufox 2>/dev/null || echo "Camoufox binary not found, will download at runtime") && \
+  (cp -r /tmp/camoufox-js ./node_modules/camoufox-js 2>/dev/null || echo "camoufox-js package not found, will install at runtime")
 
 # Fix permissions at runtime (handles mounted volumes)
 RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
