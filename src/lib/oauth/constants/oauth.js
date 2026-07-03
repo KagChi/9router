@@ -114,6 +114,9 @@ export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy-cn"] };
 // Kimchi OAuth Configuration (Browser token callback flow)
 export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 
+// AutoClaw OAuth Configuration (Google OAuth with fixed-port local proxy)
+export const AUTOCLAW_CONFIG = { ...PROVIDER_OAUTH["autoclaw"] };
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -137,4 +140,5 @@ export const PROVIDERS = {
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy-cn",
   KIMCHI: "kimchi",
+  AUTOCLAW: "autoclaw",
 };

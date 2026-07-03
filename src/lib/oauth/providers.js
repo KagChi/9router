@@ -27,6 +27,7 @@ import {
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
   KIMCHI_CONFIG,
+  AUTOCLAW_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
@@ -1383,6 +1384,182 @@ const PROVIDERS = {
         },
       };
     },
+  },
+
+  autoclaw: {
+    config: AUTOCLAW_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config) => {
+      const { startAutoClawProxy, registerAutoClawSession } = await import("./utils/server.js");
+      const deviceId = crypto.randomUUID();
+
+      const appId = config.appId;
+      const appKey = config.appKey;
+      const ts = String(Math.floor(Date.now() / 1000));
+      const sign = crypto.createHash("md5").update(`${appId}&${ts}&${appKey}`).digest("hex");
+      const headers = {
+        "X-Auth-Appid": appId,
+        "X-Auth-TimeStamp": ts,
+        "X-Auth-Sign": sign,
+        "X-Product": "autoclaw",
+        "X-Version": "1.9.1",
+        "X-Tm": "win",
+        "X-Trace-Id": crypto.randomUUID(),
+        "Content-Type": "application/json",
+      };
+
+      const response = await fetch(config.authorizeUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          source_id: config.sourceId,
+          device_id: deviceId,
+          navigate_uri: config.redirectUri,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`AutoClaw OAuth URL request failed: ${response.status}`);
+      }
+      const resp = await response.json();
+      if (resp.code != null && resp.code !== 0) {
+        throw new Error(`AutoClaw OAuth URL error: code=${resp.code} msg=${resp.msg}`);
+      }
+      const data = resp.data || {};
+      if (!data.oauth_url || !data.state) {
+        throw new Error("AutoClaw OAuth URL response missing oauth_url/state");
+      }
+
+      registerAutoClawSession(data.state, deviceId);
+
+      const proxyResult = await startAutoClawProxy();
+      if (!proxyResult.success) {
+        throw new Error(
+          proxyResult.reason === "port_busy"
+            ? "Port 18432 is already in use. Close the conflicting process and retry."
+            : `Failed to start callback proxy: ${proxyResult.reason}`,
+        );
+      }
+
+      return {
+        device_code: data.state,
+        user_code: data.state.slice(0, 8).toUpperCase(),
+        verification_uri: data.oauth_url,
+        verification_uri_complete: data.oauth_url,
+        expires_in: 300,
+        interval: 2,
+      };
+    },
+    pollToken: async (config, deviceCode) => {
+      const { getAutoClawSessionStatus, clearAutoClawSession, stopAutoClawProxy } = await import("./utils/server.js");
+
+      const session = getAutoClawSessionStatus(deviceCode);
+      if (!session) {
+        return { ok: false, data: { error: "authorization_pending" } };
+      }
+      if (session.status === "error") {
+        clearAutoClawSession(deviceCode);
+        stopAutoClawProxy();
+        return { ok: false, data: { error: session.error || "access_denied" } };
+      }
+      if (session.status === "done") {
+        return { ok: true, data: session.tokens };
+      }
+      if (session.status !== "exchanging") {
+        return { ok: false, data: { error: "authorization_pending" } };
+      }
+
+      const appId = config.appId;
+      const appKey = config.appKey;
+      const ts = String(Math.floor(Date.now() / 1000));
+      const sign = crypto.createHash("md5").update(`${appId}&${ts}&${appKey}`).digest("hex");
+      const headers = {
+        "X-Auth-Appid": appId,
+        "X-Auth-TimeStamp": ts,
+        "X-Auth-Sign": sign,
+        "X-Product": "autoclaw",
+        "X-Version": "1.9.1",
+        "X-Tm": "win",
+        "X-Trace-Id": crypto.randomUUID(),
+        "Content-Type": "application/json",
+      };
+
+      const response = await fetch(config.tokenUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          source_id: config.sourceId,
+          device_id: session.deviceId,
+          code: session.code,
+          state: deviceCode,
+          navigate_uri: config.redirectUri,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        session.status = "error";
+        session.error = `AutoClaw token exchange failed: ${response.status} ${text}`;
+        return { ok: false, data: { error: session.error } };
+      }
+      const resp = await response.json();
+      if (resp.code != null && resp.code !== 0) {
+        session.status = "error";
+        session.error = `AutoClaw login error: code=${resp.code} msg=${resp.msg}`;
+        return { ok: false, data: { error: session.error } };
+      }
+      const data = resp.data || {};
+      let accessToken = data.access_token || "";
+      let refreshToken = data.refresh_token || "";
+      if (accessToken.startsWith("Bearer ")) accessToken = accessToken.slice(7);
+      if (refreshToken.startsWith("Bearer ")) refreshToken = refreshToken.slice(7);
+
+      let jwtDeviceId = session.deviceId;
+      try {
+        const payload = accessToken.split(".")[1];
+        const json = JSON.parse(
+          Buffer.from(payload + "=".repeat(-payload.length % 4), "base64url").toString("utf8"),
+        );
+        if (json.device_id) jwtDeviceId = json.device_id;
+      } catch {}
+
+      let expiresIn = 86400;
+      try {
+        const payload = accessToken.split(".")[1];
+        const json = JSON.parse(
+          Buffer.from(payload + "=".repeat(-payload.length % 4), "base64url").toString("utf8"),
+        );
+        if (typeof json.exp === "number") {
+          expiresIn = Math.max(1, json.exp - Math.floor(Date.now() / 1000));
+        }
+      } catch {}
+
+      session.status = "done";
+      session.tokens = {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_in: expiresIn,
+        _autoclawDeviceId: jwtDeviceId,
+        _autoclawUserId: data.user_id,
+        _autoclawUserName: data.user_name,
+      };
+
+      stopAutoClawProxy();
+      return { ok: true, data: session.tokens };
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      email: tokens._autoclawUserName
+        ? `${tokens._autoclawUserName}`
+        : tokens._autoclawUserId
+          ? `autoclaw-${tokens._autoclawUserId}`
+          : null,
+      displayName: tokens._autoclawUserName || null,
+      providerSpecificData: {
+        sourceId: AUTOCLAW_CONFIG.sourceId,
+        deviceId: tokens._autoclawDeviceId,
+      },
+    }),
   },
 };
 

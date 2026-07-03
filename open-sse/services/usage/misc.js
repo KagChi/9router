@@ -1,9 +1,11 @@
 /**
- * Misc usage handlers (Qwen, iFlow, Ollama, GLM, Vercel AI Gateway, Qoder)
+ * Misc usage handlers (Qwen, iFlow, Ollama, GLM, Vercel AI Gateway, Qoder, AutoClaw)
  */
 
+import crypto from "crypto";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { U } from "./shared.js";
+import { PROVIDER_OAUTH } from "../../providers/index.js";
 
 // GLM quota endpoints (region-aware) — url from registry transport.usage
 const GLM_QUOTA_URLS = {
@@ -265,5 +267,92 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
     };
   } catch (error) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+/**
+ * AutoClaw Usage - Get wallet balance from AutoClaw reward points system
+ */
+export async function getAutoClawUsage(accessToken, proxyOptions = null) {
+  if (!accessToken) {
+    return { message: "AutoClaw access token not available." };
+  }
+  
+  // Spec re-atclaw.md §1: assetmgr wallet uses lowercase `authorization: Bearer …`.
+  // Uppercase Authorization → 410000 "Please log in.".
+  let token = accessToken;
+  if (!token.startsWith("Bearer ")) token = `Bearer ${token}`;
+
+  // Wallet endpoint also requires app-signing headers (same as all AutoClaw
+  // userapi calls). Without them → 410000 "Please log in." even with a
+  // valid Bearer token.
+  const oauth = PROVIDER_OAUTH["autoclaw"] || {};
+  const appId = oauth.appId || "100003";
+  const appKey = oauth.appKey || "38d2391985e2369a5fb8227d8e6cd5e5";
+  const ts = String(Math.floor(Date.now() / 1000));
+  const sign = crypto
+    .createHash("md5")
+    .update(`${appId}&${ts}&${appKey}`)
+    .digest("hex");
+
+  try {
+    const response = await proxyAwareFetch(
+      U("autoclaw").url,
+      {
+        method: "GET",
+        headers: {
+          "X-Auth-Appid": appId,
+          "X-Auth-TimeStamp": ts,
+          "X-Auth-Sign": sign,
+          "X-Product": "autoclaw",
+          "X-Version": "1.9.1",
+          "X-Tm": "win",
+          "X-Trace-Id": crypto.randomUUID(),
+          authorization: token,
+          Accept: "application/json",
+        },
+      },
+      proxyOptions,
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      return { message: "AutoClaw access token invalid or expired." };
+    }
+    if (!response.ok) {
+      return { message: `AutoClaw wallet API error (${response.status}).` };
+    }
+
+    const json = await response.json();
+
+    if (json.code != null && json.code !== 0) {
+      return { message: `AutoClaw wallet error: ${json.msg || json.code}` };
+    }
+
+    const rawData = json.data;
+    const wallets = Array.isArray(rawData)
+      ? rawData
+      : rawData && typeof rawData === "object"
+        ? [rawData]
+        : [];
+    let totalBalance = 0;
+    for (const w of wallets) {
+      const v = w?.total_balance ?? w?.balance ?? w?.totalBalance ?? 0;
+      totalBalance += Number(v) || 0;
+    }
+
+    return {
+      plan: "AutoClaw",
+      quotas: {
+        Points: {
+          used: 0,
+          total: 0,
+          remaining: totalBalance,
+          remainingPercentage: 100,
+          unlimited: true,
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `AutoClaw error: ${error.message}` };
   }
 }
