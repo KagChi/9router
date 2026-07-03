@@ -19,6 +19,11 @@ COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
+# Prepare Camoufox files for copying (create marker if they exist)
+RUN mkdir -p /tmp/camoufox-export && \
+  (test -d /root/.camoufox && cp -r /root/.camoufox /tmp/camoufox-export/.camoufox && echo "Camoufox binary found" || echo "Camoufox binary not found") && \
+  (test -d /app/node_modules/camoufox-js && cp -r /app/node_modules/camoufox-js /tmp/camoufox-export/camoufox-js && echo "camoufox-js package found" || echo "camoufox-js package not found")
+
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
 
@@ -41,15 +46,18 @@ COPY --from=builder /app/src/mitm ./src/mitm
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # Ensure `next` is available at runtime in case tracing did not include it.
 COPY --from=builder /app/node_modules/next ./node_modules/next
+
+# Copy Camoufox files from export directory (will be empty if not installed)
+COPY --from=builder /tmp/camoufox-export /tmp/camoufox-import
+
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
   ln -sf /app/data-home /root/.9router 2>/dev/null || true
 
-# Copy Camoufox browser binary and package if available from builder stage
-RUN --mount=type=bind,from=builder,source=/root/.camoufox,target=/tmp/camoufox \
-  --mount=type=bind,from=builder,source=/app/node_modules/camoufox-js,target=/tmp/camoufox-js \
-  (cp -r /tmp/camoufox /app/data-home/.camoufox 2>/dev/null || echo "Camoufox binary not found, will download at runtime") && \
-  (cp -r /tmp/camoufox-js ./node_modules/camoufox-js 2>/dev/null || echo "camoufox-js package not found, will install at runtime")
+# Move Camoufox files to final location if they exist
+RUN (test -d /tmp/camoufox-import/.camoufox && mv /tmp/camoufox-import/.camoufox /app/data-home/.camoufox && echo "Camoufox binary installed" || echo "Camoufox binary not found, will download at runtime") && \
+  (test -d /tmp/camoufox-import/camoufox-js && mv /tmp/camoufox-import/camoufox-js ./node_modules/camoufox-js && echo "camoufox-js package installed" || echo "camoufox-js package not found, will install at runtime") && \
+  rm -rf /tmp/camoufox-import
 
 # Fix permissions at runtime (handles mounted volumes)
 RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
