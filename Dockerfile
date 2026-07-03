@@ -11,6 +11,10 @@ COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm \
   npm install
 
+# Install Camoufox and fetch Firefox binary for Google automation
+RUN npm list camoufox-js || npm install camoufox-js
+RUN npx camoufox-js fetch || echo "⚠️  Camoufox fetch failed during build, will retry at runtime"
+
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -37,6 +41,9 @@ COPY --from=builder /app/src/mitm ./src/mitm
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # Ensure `next` is available at runtime in case tracing did not include it.
 COPY --from=builder /app/node_modules/next ./node_modules/next
+# Copy Camoufox browser binary if downloaded during build
+COPY --from=builder /root/.camoufox /app/data-home/.camoufox 2>/dev/null || true
+COPY --from=builder /app/node_modules/camoufox-js ./node_modules/camoufox-js 2>/dev/null || true
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
@@ -44,7 +51,7 @@ RUN mkdir -p /app/data && chown -R node:node /app && \
 
 # Fix permissions at runtime (handles mounted volumes)
 RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
-  printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null\nexec su-exec node "$@"\n' > /entrypoint.sh && \
+  printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null || true\nmkdir -p /app/data/db /app/data/db/backups 2>/dev/null || true\nchown -R node:node /app/data 2>/dev/null || true\nexec su-exec node "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 
 EXPOSE 20128

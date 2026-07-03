@@ -1,5 +1,17 @@
 const http = require("http");
 
+// Ensure Camoufox is ready for Google automation (production only)
+if (process.env.NODE_ENV === 'production') {
+  (async () => {
+    try {
+      const { ensureCamoufox } = await import('./src/lib/oauth/services/initCamoufox.js');
+      await ensureCamoufox();
+    } catch (e) {
+      console.warn('[Startup] Camoufox check failed:', e.message);
+    }
+  })();
+}
+
 const origCreate = http.createServer.bind(http);
 
 // Wrap Next standalone HTTP server: derive client IP from the TCP socket

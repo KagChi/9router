@@ -18,9 +18,12 @@ async function launchCamoufox({ proxyUrl, headless = true } = {}) {
     camoufox = await import("camoufox-js");
   } catch (firstErr) {
     const err = new Error(
-      `Camoufox not installed. Run "npm install camoufox-js && npx camoufox-js fetch" then retry. Cause: ${firstErr.message}`,
+      `Camoufox not installed or Firefox binary missing. Google automation unavailable. ` +
+      `Docker: rebuild image. Local: run "npm install camoufox-js && npx camoufox-js fetch". ` +
+      `Cause: ${firstErr.message}`,
     );
     err.code = "CAMOUFOX_PACKAGE_MISSING";
+    console.warn(`[BulkImport] ${err.message}`);
     throw err;
   }
 

@@ -13,6 +13,18 @@ export const LEGACY_FILES = {
 };
 export function ensureDirs() {
   for (const dir of [DATA_DIR, DB_DIR, BACKUPS_DIR]) {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      // Verify directory is actually writable
+      fs.accessSync(dir, fs.constants.W_OK);
+    } catch (e) {
+      throw new Error(
+        `Cannot create or access database directory: ${dir}. ` +
+        `Error: ${e.message}. ` +
+        `Check DATA_DIR environment variable, file permissions, and Docker volume mounts.`
+      );
+    }
   }
 }
