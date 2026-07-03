@@ -151,7 +151,7 @@ export async function GET(request, { params }) {
         : undefined;
       
       // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "qoder"];
+      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "qoder", "autoclaw"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
         deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
@@ -271,7 +271,7 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy-cn"];
+      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy-cn", "autoclaw"];
       let result;
       if (noPkceProviders.includes(provider)) {
         result = await pollForToken(provider, deviceCode);
