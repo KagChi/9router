@@ -42,6 +42,8 @@ COPY --from=builder /app/custom-server.js ./custom-server.js
 COPY --from=builder /app/open-sse ./open-sse
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
 COPY --from=builder /app/src/mitm ./src/mitm
+# Copy OAuth services including initCamoufox which is imported by custom-server.js
+COPY --from=builder /app/src/lib/oauth/services/initCamoufox.js ./src/lib/oauth/services/initCamoufox.js
 # Standalone node_modules may omit deps only required by the MITM child process.
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # Ensure `next` is available at runtime in case tracing did not include it.
