@@ -13,7 +13,16 @@ import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
-const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
+const CODEX_SSE_RETRY_PATTERNS = [
+  "server_is_overloaded",
+  "service_unavailable_error",
+  "bad gateway",
+  "502",
+  "upstream error",
+  "gateway timeout",
+  "504",
+  "temporarily unavailable"
+];
 const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
 const CODEX_SSE_USER_OUTPUT_PATTERNS = [
   "event: response.output_text.delta",
@@ -260,6 +269,20 @@ export class CodexExecutor extends BaseExecutor {
     while (true) {
       const result = await super.execute(args);
       const peek = await this._peekSseTransientError(result.response);
+      
+      // Check if response is a retryable HTTP error (502/503/504) even without SSE pattern match
+      if (!peek.matched && result.response && [HTTP_STATUS.BAD_GATEWAY, HTTP_STATUS.SERVICE_UNAVAILABLE, HTTP_STATUS.GATEWAY_TIMEOUT].includes(result.response.status)) {
+        if (attempt >= attempts) {
+          args.log?.debug?.("RETRY", `CODEX | HTTP ${result.response.status} — retries exhausted (${attempt}/${attempts})`);
+          return result;
+        }
+        attempt++;
+        args.log?.debug?.("RETRY", `CODEX | HTTP ${result.response.status} retry ${attempt}/${attempts} after ${delayMs / 1000}s`);
+        dbg("CODEX", `HTTP ${result.response.status} → retry ${attempt}/${attempts} in ${delayMs}ms`);
+        await new Promise(r => setTimeout(r, delayMs));
+        continue;
+      }
+      
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
         if (peek.replacementBody) {
@@ -272,12 +295,12 @@ export class CodexExecutor extends BaseExecutor {
         return result;
       }
       if (peek.accountFallback) {
-        args.log?.warn?.("RETRY", `CODEX | SSE account fallback "${peek.message}"`);
+        args.log?.debug?.("RETRY", `CODEX | SSE account fallback "${peek.message}"`);
         result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || CODEX_MODEL_CAPACITY_MESSAGE);
         return result;
       }
       if (attempt >= attempts) {
-        args.log?.warn?.("RETRY", `CODEX | SSE overloaded "${peek.matched}" — retries exhausted (${attempt}/${attempts})`);
+        args.log?.debug?.("RETRY", `CODEX | SSE overloaded "${peek.matched}" — retries exhausted (${attempt}/${attempts})`);
         result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || peek.matched);
         return result;
       }
