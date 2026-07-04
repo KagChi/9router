@@ -253,6 +253,15 @@ export class CodexExecutor extends BaseExecutor {
     const imgCount = Array.isArray(args.body?.input) ? args.body.input.reduce((n, it) => n + (Array.isArray(it.content) ? it.content.filter(c => c.type === "image_url").length : 0), 0) : 0;
     const inputLen = Array.isArray(args.body?.input) ? args.body.input.length : 0;
     dbg("CODEX", `execute start | inputItems=${inputLen} | images=${imgCount} | sessionId=${this._currentSessionId || "pending"}`);
+    
+    // Log full request body for debugging (truncate long content)
+    const bodySnapshot = JSON.stringify(args.body, (key, val) => {
+      if (typeof val === "string" && val.length > 200) return val.slice(0, 200) + "...[truncated]";
+      return val;
+    });
+    args.log?.debug?.("CODEX_REQUEST", `Request body snapshot: ${bodySnapshot}`);
+    dbg("CODEX", `Request body keys: ${Object.keys(args.body || {}).join(", ")}`);
+    
     if (imgCount > 0) {
       const t0 = Date.now();
       await this.prefetchImages(args.body);
@@ -268,6 +277,11 @@ export class CodexExecutor extends BaseExecutor {
     let attempt = 0;
     while (true) {
       const result = await super.execute(args);
+      
+      // Log response status and headers for debugging
+      args.log?.debug?.("CODEX_RESPONSE", `Status: ${result.response?.status} ${result.response?.statusText}`);
+      args.log?.debug?.("CODEX_RESPONSE", `Headers: ${JSON.stringify(Object.fromEntries(result.response?.headers?.entries() || []))}`);
+      
       const peek = await this._peekSseTransientError(result.response);
       
       // Check if response is a retryable HTTP error (502/503/504) even without SSE pattern match
@@ -328,6 +342,12 @@ export class CodexExecutor extends BaseExecutor {
         if (done) break;
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
+        
+        // Log first chunk for debugging
+        if (chunks.length === 1) {
+          dbg("CODEX", `SSE first chunk (${text.length} chars): ${text.slice(0, 500)}`);
+        }
+        
         const lowerText = text.toLowerCase();
         const accountHit = CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS.find(p => lowerText.includes(p));
         if (accountHit) { matched = accountHit; accountFallback = true; break; }
