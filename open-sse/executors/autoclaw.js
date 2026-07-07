@@ -108,7 +108,7 @@ export class AutoClawExecutor extends DefaultExecutor {
             "X-Auth-TimeStamp": ts,
             "X-Auth-Sign": sign,
             "X-Product": "autoclaw",
-            "X-Version": "1.9.1",
+            "X-Version": "1.11.0",
             "X-Tm": "win",
             "X-Trace-Id": randomUUID(),
             "Content-Type": "application/json",

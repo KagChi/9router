@@ -202,8 +202,6 @@ const INVALID_CREDENTIAL_MARKERS = [
   "couldn't find your google account",
   "couldn’t find your google account",
   "enter a valid email",
-  "couldn’t sign you in",
-  "couldn't sign you in",
   "invalid email or password",
   "password is incorrect",
 ];
@@ -222,6 +220,16 @@ const MANUAL_ASSIST_MARKERS = [
   "unusual activity detected",
   "captcha",
   "try again later",
+  // Google bot-detection challenge — NOT invalid password. Shows
+  // "Couldn't sign you in" + "Google couldn't verify this account belongs to
+  // you" with a "Recover account" button. Treat as manual-assist so caller
+  // can retry with a different proxy / warm-up cookie set.
+  "couldn't sign you in",
+  "couldn’t sign you in",
+  "couldn't verify this account belongs to you",
+  "couldn’t verify this account belongs to you",
+  "recover account",
+  "update login challenge settings",
 ];
 
 const RESTRICTED_ACCOUNT_MARKERS = [
@@ -1602,7 +1610,14 @@ export async function runGoogleAccountAutomation({
     }
 
     const text = await readPageText(page);
-    if (includesAny(text, INVALID_CREDENTIAL_MARKERS)) {
+    let currentUrl = "";
+    try {
+      currentUrl = page.url() || "";
+    } catch {}
+    const onGoogleHost = /(^|\/\/)(accounts|myaccount)\.google\.com/i.test(
+      currentUrl,
+    );
+    if (onGoogleHost && includesAny(text, INVALID_CREDENTIAL_MARKERS)) {
       reportStep(
         "invalid_credentials",
         "Google rejected the supplied email or password",

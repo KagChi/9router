@@ -70,11 +70,34 @@ class AutoClawApiClient {
       "X-Auth-TimeStamp": ts,
       "X-Auth-Sign": sign,
       "X-Product": "autoclaw",
-      "X-Version": "1.9.1",
+      "X-Version": "1.11.0",
       "X-Tm": "win",
       "X-Trace-Id": crypto.randomUUID(),
       "Content-Type": "application/json",
     };
+  }
+
+  /**
+   * Construct Google OAuth URL directly, bypassing the dead
+   * overseasv1/google-oauth-url endpoint (631002).
+   * Uses the same client_id, redirect_uri, scope the server would generate.
+   */
+  constructOAuthUrl() {
+    const params = new URLSearchParams({
+      client_id: this.config.clientId,
+      redirect_uri: this.config.redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      state: crypto.randomBytes(16).toString("hex"),
+      access_type: "offline",
+      prompt: "consent",
+    });
+    const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    const state = params.get("state");
+    console.log(
+      `[autoclaw-bulk] constructOAuthUrl state=${state.slice(0, 20)}... (bypassing overseasv1)`,
+    );
+    return { oauthUrl: url, state };
   }
 
   async requestOAuthUrl(deviceId) {
@@ -331,11 +354,8 @@ export class AutoClawBulkImportManager extends BulkImportManager {
     );
 
     // Retry once when Google triggers CAPTCHA/verification (`needs_manual`).
-    // Camoufox reopens with a fresh fingerprint + new OAuth state, which
-    // often clears the challenge. If it still fails on the retry we fall
-    // through to the manual-followup path.
-    // ponytail: skipped: exponential backoff / IP rotation, add when retry
-    // still hits the challenge on residential proxies.
+    // Camoufox reopens with a fresh fingerprint + different proxy from the
+    // pool (Google flags the IP, not just the browser fingerprint).
     const MAX_LOGIN_ATTEMPTS = 2;
     let attemptResult = null;
     for (let attempt = 1; attempt <= MAX_LOGIN_ATTEMPTS; attempt++) {
@@ -345,6 +365,20 @@ export class AutoClawBulkImportManager extends BulkImportManager {
         return;
       }
       const isLastAttempt = attempt === MAX_LOGIN_ATTEMPTS;
+
+      // On retry after bot challenge: rotate to a different proxy so the
+      // new Camoufox fingerprint isn't wasted on the same flagged IP.
+      if (
+        attempt > 1 &&
+        job.resolvedProxyUrls &&
+        job.resolvedProxyUrls.length > 1
+      ) {
+        this.assignProxyToAccount(job, account);
+        console.log(
+          `[autoclaw-bulk] rotated proxy for ${account.email} → ${account.resolvedProxyUrl}`,
+        );
+      }
+
       if (attempt > 1) {
         this.setAccountStep(
           account,
@@ -402,6 +436,10 @@ export class AutoClawBulkImportManager extends BulkImportManager {
     account._rejectTokens = () => {};
 
     // Step 1: ask AutoClaw for the Google consent URL + state.
+    // The overseasv1/google-oauth-url endpoint returns 631002 ("version no
+    // longer supported") for APP_ID 100003. Fall back to constructing the
+    // Google OAuth URL directly — google-oauth-login (token exchange) still
+    // works with the same APP_ID.
     let oauthUrl;
     let state;
     try {
@@ -411,9 +449,24 @@ export class AutoClawBulkImportManager extends BulkImportManager {
         "Requesting AutoClaw OAuth URL",
       );
       await this.persistJobSnapshot(job, { forcePreview: true });
-      const urlResp = await autoclawService.requestOAuthUrl(deviceId);
-      oauthUrl = urlResp.oauthUrl;
-      state = urlResp.state;
+      try {
+        const urlResp = await autoclawService.requestOAuthUrl(deviceId);
+        oauthUrl = urlResp.oauthUrl;
+        state = urlResp.state;
+      } catch (serverErr) {
+        if (
+          /631002|version.*no longer|not supported/i.test(serverErr.message)
+        ) {
+          console.log(
+            `[autoclaw-bulk] overseasv1/google-oauth-url dead (631002), using direct Google OAuth URL`,
+          );
+          const direct = autoclawService.constructOAuthUrl();
+          oauthUrl = direct.oauthUrl;
+          state = direct.state;
+        } else {
+          throw serverErr;
+        }
+      }
     } catch (error) {
       if (/631002|version.*no longer|not supported/i.test(error.message)) {
         this.finalizeAccount(account, "failed", {

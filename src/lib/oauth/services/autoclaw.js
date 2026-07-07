@@ -33,13 +33,16 @@ export class AutoClawService {
     const appId = this.config.appId;
     const appKey = this.config.appKey;
     const ts = String(Math.floor(Date.now() / 1000));
-    const sign = crypto.createHash("md5").update(`${appId}&${ts}&${appKey}`).digest("hex");
+    const sign = crypto
+      .createHash("md5")
+      .update(`${appId}&${ts}&${appKey}`)
+      .digest("hex");
     return {
       "X-Auth-Appid": appId,
       "X-Auth-TimeStamp": ts,
       "X-Auth-Sign": sign,
       "X-Product": "autoclaw",
-      "X-Version": "1.9.1",
+      "X-Version": "1.11.0",
       "X-Tm": "win",
       "X-Trace-Id": crypto.randomUUID(),
       "Content-Type": "application/json",
@@ -51,7 +54,10 @@ export class AutoClawService {
     try {
       const payload = token.split(".")[1];
       if (!payload) return {};
-      const json = Buffer.from(payload + "=".repeat(-payload.length % 4), "base64url").toString("utf8");
+      const json = Buffer.from(
+        payload + "=".repeat(-payload.length % 4),
+        "base64url",
+      ).toString("utf8");
       return JSON.parse(json);
     } catch {
       return {};
@@ -90,7 +96,11 @@ export class AutoClawService {
 
       server.on("error", (err) => {
         if (err.code === "EADDRINUSE") {
-          reject(new Error(`Port ${port} is already in use. Close other applications using this port (e.g. the AutoClaw desktop app).`));
+          reject(
+            new Error(
+              `Port ${port} is already in use. Close other applications using this port (e.g. the AutoClaw desktop app).`,
+            ),
+          );
         } else {
           reject(err);
         }
@@ -120,11 +130,15 @@ export class AutoClawService {
     const resp = await response.json();
     // { code, msg, data } envelope
     if (resp.code != null && resp.code !== 0) {
-      throw new Error(`AutoClaw OAuth URL error: code=${resp.code} msg=${resp.msg}`);
+      throw new Error(
+        `AutoClaw OAuth URL error: code=${resp.code} msg=${resp.msg}`,
+      );
     }
     const data = resp.data || {};
     if (!data.oauth_url || !data.state) {
-      throw new Error(`AutoClaw OAuth URL response missing oauth_url/state: ${JSON.stringify(data)}`);
+      throw new Error(
+        `AutoClaw OAuth URL response missing oauth_url/state: ${JSON.stringify(data)}`,
+      );
     }
     return { oauthUrl: data.oauth_url, state: data.state };
   }
@@ -152,11 +166,15 @@ export class AutoClawService {
     }
     const resp = await response.json();
     if (resp.code != null && resp.code !== 0) {
-      throw new Error(`AutoClaw login error: code=${resp.code} msg=${resp.msg}`);
+      throw new Error(
+        `AutoClaw login error: code=${resp.code} msg=${resp.msg}`,
+      );
     }
     const data = resp.data || {};
     if (!data.access_token) {
-      throw new Error(`AutoClaw login response missing access_token: ${JSON.stringify(data)}`);
+      throw new Error(
+        `AutoClaw login response missing access_token: ${JSON.stringify(data)}`,
+      );
     }
     return data;
   }
@@ -235,7 +253,9 @@ export class AutoClawService {
       close();
 
       if (callbackParams.error) {
-        throw new Error(callbackParams.error_description || callbackParams.error);
+        throw new Error(
+          callbackParams.error_description || callbackParams.error,
+        );
       }
       if (!callbackParams.code) {
         throw new Error("No authorization code received");
@@ -244,13 +264,18 @@ export class AutoClawService {
       spinner.start("Exchanging code for AutoClaw tokens...");
 
       // Step 2: exchange the Google code for AutoClaw tokens.
-      const data = await this.exchangeCode(callbackParams.code, callbackParams.state, deviceId);
+      const data = await this.exchangeCode(
+        callbackParams.code,
+        callbackParams.state,
+        deviceId,
+      );
 
       // Normalize: strip "Bearer " prefix if present.
       let accessToken = data.access_token || "";
       let refreshToken = data.refresh_token || "";
       if (accessToken.startsWith("Bearer ")) accessToken = accessToken.slice(7);
-      if (refreshToken.startsWith("Bearer ")) refreshToken = refreshToken.slice(7);
+      if (refreshToken.startsWith("Bearer "))
+        refreshToken = refreshToken.slice(7);
 
       // The JWT payload's device_id is authoritative for refresh — prefer it.
       const jwtPayload = this.decodeJwt(accessToken);
@@ -260,10 +285,12 @@ export class AutoClawService {
 
       await this.saveTokens(
         { access_token: accessToken, refresh_token: refreshToken },
-        authoritativeDeviceId
+        authoritativeDeviceId,
       );
 
-      spinner.succeed(`AutoClaw connected successfully! (user: ${data.user_name || data.user_id || "unknown"})`);
+      spinner.succeed(
+        `AutoClaw connected successfully! (user: ${data.user_name || data.user_id || "unknown"})`,
+      );
       return true;
     } catch (error) {
       spinner.fail(`Failed: ${error.message}`);
