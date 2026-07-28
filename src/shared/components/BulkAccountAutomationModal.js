@@ -521,6 +521,26 @@ export default function BulkAccountAutomationModal({
     }
   };
 
+  const handleRetryWorker = async (workerId) => {
+    if (!activeJob?.jobId || !workerId) return;
+
+    try {
+      const res = await fetch(
+        `/api/oauth/${provider}/bulk-import/${activeJob.jobId}/retry`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workerId }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to retry worker");
+      if (data.job) setActiveJob(data.job);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const handleDoneRefresh = () => {
     resetState();
     onSuccess?.();
@@ -809,53 +829,141 @@ export default function BulkAccountAutomationModal({
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
             <div className="space-y-4">
-              <div className="overflow-hidden rounded-xl border border-border bg-sidebar">
-                <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold">
-                      Live Browser Preview
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      {activeJob.preview?.email || "Waiting for worker"}
-                      {activeJob.preview?.workerId
-                        ? ` | Worker ${activeJob.preview.workerId}`
-                        : ""}
-                    </p>
-                  </div>
-                  <div className="text-right text-xs text-text-muted">
-                    <p>{formatStepLabel(activeJob.preview?.step)}</p>
-                    <p>Updated {formatClock(activeJob.preview?.updatedAt)}</p>
-                  </div>
-                </div>
-                <div className="relative bg-black/90">
-                  {activeJob.preview?.imageData ? (
-                    <Image
-                      src={activeJob.preview.imageData}
-                      alt={`Live worker preview for ${activeJob.preview.email || serviceName}`}
-                      width={1440}
-                      height={900}
-                      unoptimized
-                      className="h-[340px] w-full object-contain"
-                    />
-                  ) : (
-                    <div className="flex h-[340px] flex-col items-center justify-center gap-3 px-6 text-center text-slate-200">
-                      <span className="material-symbols-outlined text-5xl text-primary/80">
-                        browser_updated
-                      </span>
+              {(() => {
+                const previews = activeJob.preview;
+                const isMulti = Array.isArray(previews) && previews.length > 0;
+                const singlePreview =
+                  !Array.isArray(previews) && previews ? previews : null;
+                const previewList = isMulti
+                  ? previews
+                  : singlePreview
+                    ? [singlePreview]
+                    : [];
+                const hasPreview = previewList.length > 0;
+
+                return (
+                  <div className="overflow-hidden rounded-xl border border-border bg-sidebar">
+                    <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="text-base font-medium">
-                          Preview will appear when a worker opens Google or{" "}
-                          {serviceName}
+                        <p className="text-sm font-semibold">
+                          Live Browser Preview
+                          {isMulti ? ` (${previewList.length} workers)` : ""}
                         </p>
-                        <p className="mt-1 text-sm text-slate-400">
-                          The job keeps running even when a screenshot is not
-                          available yet.
-                        </p>
+                        {!isMulti && (
+                          <p className="text-xs text-text-muted">
+                            {singlePreview?.email || "Waiting for worker"}
+                            {singlePreview?.workerId
+                              ? ` | Worker ${singlePreview.workerId}`
+                              : ""}
+                          </p>
+                        )}
                       </div>
+                      {!isMulti && (
+                        <div className="text-right text-xs text-text-muted">
+                          <p>{formatStepLabel(singlePreview?.step)}</p>
+                          <p>Updated {formatClock(singlePreview?.updatedAt)}</p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
+                    <div className="relative bg-black/90">
+                      {hasPreview ? (
+                        isMulti ? (
+                          <div
+                            className={`grid gap-1 p-1 ${
+                              previewList.length <= 2
+                                ? "grid-cols-2"
+                                : previewList.length <= 4
+                                  ? "grid-cols-2"
+                                  : "grid-cols-3"
+                            }`}
+                            style={{
+                              maxHeight: "520px",
+                              overflowY: "auto",
+                            }}
+                          >
+                            {previewList.map((p, idx) => (
+                              <div
+                                key={idx}
+                                className="flex flex-col overflow-hidden rounded bg-black/60"
+                              >
+                                <div className="flex items-center justify-between gap-1 border-b border-white/10 px-2 py-1">
+                                  <span className="truncate text-[10px] text-white/70">
+                                    {p.email}
+                                    {p.workerId ? ` | W${p.workerId}` : ""}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    {(p.status === "failed" ||
+                                      p.status === "cancelled") &&
+                                      p.workerId && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleRetryWorker(p.workerId)
+                                          }
+                                          className="flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-amber-300 hover:bg-white/10"
+                                          title="Retry this worker"
+                                        >
+                                          <span className="material-symbols-outlined text-[11px]">
+                                            replay
+                                          </span>
+                                          retry
+                                        </button>
+                                      )}
+                                    <span className="shrink-0 text-[10px] text-white/40">
+                                      {formatStepLabel(p.step)}
+                                    </span>
+                                  </div>
+                                </div>
+                                {p.imageData ? (
+                                  <Image
+                                    src={p.imageData}
+                                    alt={`Worker ${p.workerId} preview`}
+                                    width={720}
+                                    height={450}
+                                    unoptimized
+                                    className="h-[160px] w-full object-contain"
+                                  />
+                                ) : (
+                                  <div className="flex h-[160px] items-center justify-center">
+                                    <span className="material-symbols-outlined text-3xl text-white/30">
+                                      browser_updated
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <Image
+                            src={singlePreview.imageData}
+                            alt={`Live worker preview for ${singlePreview.email || serviceName}`}
+                            width={1440}
+                            height={900}
+                            unoptimized
+                            className="h-[340px] w-full object-contain"
+                          />
+                        )
+                      ) : (
+                        <div className="flex h-[340px] flex-col items-center justify-center gap-3 px-6 text-center text-slate-200">
+                          <span className="material-symbols-outlined text-5xl text-primary/80">
+                            browser_updated
+                          </span>
+                          <div>
+                            <p className="text-base font-medium">
+                              Preview will appear when a worker opens Google or{" "}
+                              {serviceName}
+                            </p>
+                            <p className="mt-1 text-sm text-slate-400">
+                              The job keeps running even when a screenshot is
+                              not available yet.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {pendingGroups.length > 0 && (
                 <div className="space-y-3">

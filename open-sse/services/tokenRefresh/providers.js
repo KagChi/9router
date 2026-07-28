@@ -706,6 +706,7 @@ export async function refreshWindsurfToken(credentials, log) {
   );
   return null;
 }
+
 /**
  * AutoClaw token refresh.
  *

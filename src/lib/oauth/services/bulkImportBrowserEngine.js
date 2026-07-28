@@ -81,6 +81,37 @@ async function launchCamoufox({ proxyUrl, headless = true } = {}) {
     delete launchOptions.contextOptions.isMobile;
     delete launchOptions.contextOptions.hasTouch;
   }
+
+  // HTTP/2 + connection reuse tuning. Ketika lewat proxy residential, tiap
+  // request baru bikin TLS handshake mahal. Prefs ini paksa Firefox reuse
+  // koneksi persistent ke proxy + Google + Keycloak, kurangi round-trip.
+  // ponytail: skipped: per-host tuning, tambah kalau host spesifik butuh
+  // pool lebih besar.
+  launchOptions.firefoxUserPrefs = {
+    ...(launchOptions.firefoxUserPrefs || {}),
+    "network.http.http2.enabled": true,
+    "network.http.http2.enabled.deps": true,
+    "network.http.http3.enable": true,
+    "network.http.keep-alive.timeout": 600,
+    "network.http.max-persistent-connections-per-server": 10,
+    "network.http.max-persistent-connections-per-proxy": 64,
+    "network.http.max-connections": 900,
+    "network.http.connection-timeout": 30,
+    "network.http.response.timeout": 60,
+    // Speculative connect memanaskan socket ke host yang dihover / diprefetch.
+    "network.http.speculative-parallel-limit": 10,
+    "network.dns.disablePrefetch": false,
+    "network.predictor.enabled": true,
+    "network.predictor.enable-prefetch": true,
+    // Kurangi telemetri background yang buang bandwidth proxy.
+    "toolkit.telemetry.enabled": false,
+    "toolkit.telemetry.unified": false,
+    "datareporting.healthreport.uploadEnabled": false,
+    "app.normandy.enabled": false,
+    "browser.discovery.enabled": false,
+    "browser.newtabpage.activity-stream.feeds.telemetry": false,
+  };
+
   if (proxyUrl) {
     // Parse proxy URL — Playwright/Firefox needs username/password separately
     try {

@@ -44,9 +44,10 @@ export default function ConnectionRow({
       : hasLegacyProxy
         ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
         : "";
-  const autoPingTooltip = autoPing?.provider === "codex"
-    ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
-    : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
+  const autoPingTooltip =
+    autoPing?.provider === "codex"
+      ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
+      : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
 
   let maskedProxyUrl = "";
   if (
@@ -262,23 +263,54 @@ export default function ConnectionRow({
               </span>
             )}
             {balance !== undefined && (
-              <Badge
-                variant={
+              <div
+                className={`inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium ${
                   balance === null
-                    ? "default"
-                    : balance > 0
-                      ? "success"
-                      : "error"
+                    ? "bg-black/5 text-text-muted dark:bg-white/5"
+                    : typeof balance === "object" && balance.message
+                      ? "bg-amber-500/10 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400"
+                      : typeof balance === "object"
+                        ? balance.remaining > 0
+                          ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+                          : "bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-400"
+                        : balance > 0
+                          ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+                          : "bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-400"
+                }`}
+                title={
+                  typeof balance === "object" && balance?.message
+                    ? balance.message
+                    : undefined
                 }
-                size="sm"
               >
-                <span className="material-symbols-outlined mr-0.5 text-[12px] align-middle">
+                <span className="material-symbols-outlined text-[12px]">
                   toll
                 </span>
-                {balance === null
-                  ? "Balance: —"
-                  : `${balance.toLocaleString()} pts`}
-              </Badge>
+                {balance === null ? (
+                  <span>—</span>
+                ) : typeof balance === "object" && balance.message ? (
+                  <span className="truncate max-w-[220px]">
+                    {balance.message}
+                  </span>
+                ) : typeof balance === "object" ? (
+                  <span className="flex items-center gap-1.5">
+                    <span>
+                      {balance.used.toLocaleString()} /{" "}
+                      {balance.total.toLocaleString()}
+                    </span>
+                    <span className="w-10 h-1 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+                      <span
+                        className="block h-full rounded-full bg-current transition-all"
+                        style={{
+                          width: `${Math.min((balance.used / balance.total) * 100, 100)}%`,
+                        }}
+                      />
+                    </span>
+                  </span>
+                ) : (
+                  <span>{balance.toLocaleString()} pts</span>
+                )}
+              </div>
             )}
             {getOneByOneLabel() && (
               <Badge variant={getOneByOneVariant()} size="sm">

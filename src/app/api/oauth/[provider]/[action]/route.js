@@ -262,6 +262,7 @@ export async function GET(request, { params }) {
         "kilocode",
         "codebuddy-cn",
         "codebuddy-intl",
+        "codebuddy",
         "qoder",
         "qoder-cn",
         "grok-cli",

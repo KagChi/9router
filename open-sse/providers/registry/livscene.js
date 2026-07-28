@@ -18,13 +18,9 @@ const livsceneProvider = {
       apiKeyUrl: "https://ai.livscene.com/keys",
     },
   },
-  // Livscene keys come from Google OAuth automation, so we register as oauth
-  // provider (appears in OAuth Providers section like AutoClaw) while also
-  // supporting manual apikey entry.
-  category: "oauth",
-  authType: "oauth",
-  hasOAuth: true,
-  authModes: ["oauth", "apikey"],
+  category: "apikey",
+  hasOAuth: false,
+  authModes: ["apikey"],
   transport: {
     baseUrl: "https://ai.livscene.com/v1/chat/completions",
     format: "openai",
