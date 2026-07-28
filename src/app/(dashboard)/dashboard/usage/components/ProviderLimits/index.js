@@ -196,7 +196,7 @@ export default function ProviderLimits() {
         // Hide providers yang balance-nya sudah ditampilkan inline di halaman
         // dashboard/providers/[id] agar tidak dobel muncul di Quota Tracker.
         const connectionList = (data.connections || []).filter(
-          (conn) => conn.provider !== "autoclaw",
+          (conn) => conn.provider !== "autoclaw" && conn.provider !== "livscene",
         );
         const nextPagination = getSafePagination(data.pagination, pageSize);
         const nextTotals = getSafeTotals(data.totals, connectionList.length);

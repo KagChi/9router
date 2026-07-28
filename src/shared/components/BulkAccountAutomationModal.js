@@ -55,6 +55,118 @@ AccountStatusBadge.propTypes = {
   status: PropTypes.string,
 };
 
+function AccountCard({
+  account,
+  formatStepLabel,
+  formatClock,
+  onOpenManualSession,
+}) {
+  const [showLogs, setShowLogs] = useState(false);
+  const [showFullError, setShowFullError] = useState(false);
+  const errorText = account.error || "";
+  const isLongError = errorText.length > 120;
+  const displayError =
+    isLongError && !showFullError ? errorText.slice(0, 120) + "..." : errorText;
+  return (
+    <div className="rounded-lg border border-border bg-background/80 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{account.email}</p>
+          <p className="text-[11px] text-text-muted">
+            {account.workerId ? `W${account.workerId} | ` : ""}
+            {formatClock(account.updatedAt)}
+          </p>
+        </div>
+        <AccountStatusBadge status={account.status} />
+      </div>
+
+      <div className="mt-2 rounded-lg border border-border/70 bg-sidebar/70 px-2.5 py-1.5">
+        <p className="text-sm font-medium capitalize">
+          {formatStepLabel(account.currentStep)}
+        </p>
+        {account.resolvedProxyUrl && (
+          <p
+            className="text-[11px] text-primary"
+            title={account.resolvedProxyUrl}
+          >
+            Proxy:{" "}
+            {account.resolvedProxyUrl
+              .replace(/^https?:\/\//, "")
+              .replace(/^socks[45]:\/\//, "")
+              .split("@")
+              .pop()
+              ?.split(":")[0] || "proxy"}
+          </p>
+        )}
+      </div>
+
+      {account.error && (
+        <div className="mt-2">
+          <p className="break-words text-xs text-red-500">{displayError}</p>
+          {isLongError && (
+            <button
+              type="button"
+              onClick={() => setShowFullError(!showFullError)}
+              className="text-[11px] font-medium text-primary hover:underline"
+            >
+              {showFullError ? "Show less" : "Show all"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {account.logs && account.logs.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowLogs(!showLogs)}
+            className="flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-main"
+          >
+            <span
+              className="material-symbols-outlined text-[14px] transition-transform"
+              style={{ transform: showLogs ? "rotate(90deg)" : "" }}
+            >
+              chevron_right
+            </span>
+            {showLogs ? "Hide" : "Show"} Logs ({account.logs.length})
+          </button>
+          {showLogs && (
+            <div className="mt-1 max-h-[120px] space-y-0.5 overflow-y-auto rounded-lg border border-border/70 bg-sidebar/70 px-2.5 py-1.5">
+              {account.logs.map((log, i) => (
+                <p
+                  key={i}
+                  className="break-words text-[11px] leading-relaxed text-text-muted"
+                >
+                  <span className="text-text-muted/70">
+                    {formatClock(log.at)}
+                  </span>{" "}
+                  {log.message}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {onOpenManualSession && (
+        <div className="mt-2 flex items-center gap-2">
+          <Button size="sm" variant="secondary" onClick={onOpenManualSession}>
+            Manual Session
+          </Button>
+          <p className="text-[11px] text-text-muted">CAPTCHA / 2FA</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+AccountCard.propTypes = {
+  account: PropTypes.object,
+  formatStepLabel: PropTypes.func,
+  formatClock: PropTypes.func,
+  onOpenManualSession: PropTypes.func,
+};
+
 async function fetchJob(provider, jobId) {
   const res = await fetch(`/api/oauth/${provider}/bulk-import/${jobId}`, {
     cache: "no-store",
@@ -80,6 +192,7 @@ export default function BulkAccountAutomationModal({
   title,
   serviceName,
   asPage = false,
+  showReferralInput = false,
 }) {
   const isOpen = asPage ? true : isOpenProp;
   const storageKey = `${provider}-bulk-import-active-job`;
@@ -98,6 +211,7 @@ export default function BulkAccountAutomationModal({
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
   const [jobRestoreNotice, setJobRestoreNotice] = useState(null);
+  const [affCode, setAffCode] = useState("Km2H");
 
   const runningJob = activeJob && ACTIVE_JOB_STATUSES.has(activeJob.status);
   const finishedJob = activeJob && TERMINAL_JOB_STATUSES.has(activeJob.status);
@@ -126,9 +240,30 @@ export default function BulkAccountAutomationModal({
     }));
   }, [activeJob]);
 
-  const activityItems = useMemo(
-    () => [...(activeJob?.activity || [])].reverse(),
-    [activeJob],
+  // Split groups: pending (in-progress) vs completed (success + failed)
+  const pendingGroups = useMemo(
+    () =>
+      groupedAccounts.filter(
+        (g) => !["success", "failed", "cancelled"].includes(g.status),
+      ),
+    [groupedAccounts],
+  );
+  const successGroups = useMemo(
+    () => groupedAccounts.filter((g) => g.status === "success"),
+    [groupedAccounts],
+  );
+  const failedGroups = useMemo(
+    () =>
+      groupedAccounts.filter((g) => ["failed", "cancelled"].includes(g.status)),
+    [groupedAccounts],
+  );
+  const successAccounts = useMemo(
+    () => successGroups.flatMap((g) => g.accounts),
+    [successGroups],
+  );
+  const failedAccounts = useMemo(
+    () => failedGroups.flatMap((g) => g.accounts),
+    [failedGroups],
   );
 
   const resetState = useCallback(() => {
@@ -317,6 +452,9 @@ export default function BulkAccountAutomationModal({
       } else if (proxyUrl.trim()) {
         postBody.proxyUrl = proxyUrl.trim();
       }
+      if (showReferralInput && affCode.trim()) {
+        postBody.aff = affCode.trim();
+      }
       const res = await fetch(`/api/oauth/${provider}/bulk-import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -416,6 +554,23 @@ export default function BulkAccountAutomationModal({
             <label className="mb-2 block text-sm font-medium">
               Bulk Accounts <span className="text-red-500">*</span>
             </label>
+            {showReferralInput && (
+              <div className="mb-3">
+                <label className="mb-1 block text-sm font-medium">
+                  Referral Code
+                </label>
+                <input
+                  type="text"
+                  value={affCode}
+                  onChange={(e) => setAffCode(e.target.value)}
+                  placeholder="Km2H"
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <p className="mt-1 text-xs text-text-muted">
+                  Livscene referral code (aff parameter in sign-up URL).
+                </p>
+              </div>
+            )}
             <textarea
               value={bulkText}
               onChange={(event) => setBulkText(event.target.value)}
@@ -702,12 +857,61 @@ export default function BulkAccountAutomationModal({
                 </div>
               </div>
 
-              {groupedAccounts.map((group) => (
+              {pendingGroups.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold">In Progress</p>
+                  {pendingGroups.map((group) => (
+                    <div
+                      key={group.status}
+                      className="rounded-xl border border-border p-3"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <AccountStatusBadge status={group.status} />
+                          <p className="text-sm font-semibold capitalize">
+                            {formatStepLabel(group.status)}
+                          </p>
+                        </div>
+                        <p className="text-xs text-text-muted">
+                          {group.accounts.length}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        {group.accounts.map((account) => (
+                          <AccountCard
+                            key={`${account.email}-${account.line}`}
+                            account={account}
+                            formatStepLabel={formatStepLabel}
+                            formatClock={formatClock}
+                            onOpenManualSession={
+                              account.manualSessionAvailable && account.workerId
+                                ? () =>
+                                    handleOpenManualSession(account.workerId)
+                                : null
+                            }
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+              <p className="text-sm font-semibold">Completed</p>
+              {successAccounts.length === 0 && failedAccounts.length === 0 && (
+                <p className="text-xs text-text-muted">
+                  No completed accounts yet.
+                </p>
+              )}
+              {successGroups.map((group) => (
                 <div
                   key={group.status}
-                  className="rounded-xl border border-border p-4"
+                  className="rounded-xl border border-border p-3"
                 >
-                  <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <AccountStatusBadge status={group.status} />
                       <p className="text-sm font-semibold capitalize">
@@ -715,132 +919,51 @@ export default function BulkAccountAutomationModal({
                       </p>
                     </div>
                     <p className="text-xs text-text-muted">
-                      {group.accounts.length} account
-                      {group.accounts.length === 1 ? "" : "s"}
+                      {group.accounts.length}
                     </p>
                   </div>
 
-                  <div className="grid gap-3 xl:grid-cols-2">
+                  <div className="space-y-2">
                     {group.accounts.map((account) => (
-                      <div
+                      <AccountCard
                         key={`${account.email}-${account.line}`}
-                        className="rounded-xl border border-border bg-background/80 p-4"
-                      >
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold">
-                              {account.email}
-                            </p>
-                            <p className="text-[11px] text-text-muted">
-                              Line {account.line}
-                              {account.workerId
-                                ? ` | Worker ${account.workerId}`
-                                : ""}{" "}
-                              | {formatClock(account.updatedAt)}
-                            </p>
-                          </div>
-                          <AccountStatusBadge status={account.status} />
-                        </div>
-
-                        <div className="mt-3 rounded-lg border border-border/70 bg-sidebar/70 px-3 py-2">
-                          <p className="text-[11px] uppercase tracking-wide text-text-muted">
-                            Current Step
-                          </p>
-                          <p className="mt-1 text-sm font-medium capitalize">
-                            {formatStepLabel(account.currentStep)}
-                          </p>
-                          {account.resolvedProxyUrl && (
-                            <p
-                              className="mt-1 text-[11px] text-primary"
-                              title={account.resolvedProxyUrl}
-                            >
-                              Proxy:{" "}
-                              {account.resolvedProxyUrl
-                                .replace(/^https?:\/\//, "")
-                                .replace(/^socks[45]:\/\//, "")
-                                .split("@")
-                                .pop()
-                                ?.split(":")[0] || "proxy"}
-                            </p>
-                          )}
-                        </div>
-
-                        {account.error && (
-                          <p className="mt-3 text-xs text-red-500">
-                            {account.error}
-                          </p>
-                        )}
-
-                        {account.manualSessionAvailable && account.workerId ? (
-                          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <Button
-                              size="sm"
-                              variant={
-                                account.manualSessionOpened
-                                  ? "secondary"
-                                  : "primary"
-                              }
-                              onClick={() =>
-                                handleOpenManualSession(account.workerId)
-                              }
-                            >
-                              {account.manualSessionOpened
-                                ? "Re-open Manual Session"
-                                : "Open Manual Session"}
-                            </Button>
-                            <p className="text-[11px] text-text-muted">
-                              Use this only for CAPTCHA, 2FA, or recovery
-                              prompts.
-                            </p>
-                          </div>
-                        ) : null}
-                      </div>
+                        account={account}
+                        formatStepLabel={formatStepLabel}
+                        formatClock={formatClock}
+                      />
                     ))}
                   </div>
                 </div>
               ))}
-            </div>
-
-            <div className="rounded-xl border border-border bg-sidebar/70">
-              <div className="border-b border-border px-4 py-3">
-                <p className="text-sm font-semibold">Live Activity Log</p>
-                <p className="text-xs text-text-muted">
-                  Worker steps update in near real time.
-                </p>
-              </div>
-              <div className="max-h-[640px] space-y-3 overflow-y-auto p-4">
-                {activityItems.length === 0 && (
-                  <div className="rounded-lg bg-background/70 px-3 py-4 text-sm text-text-muted">
-                    Waiting for the first worker event...
-                  </div>
-                )}
-                {activityItems.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="rounded-lg border border-border/70 bg-background/80 px-3 py-3"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">
-                          {entry.email}
-                        </p>
-                        <p className="text-[11px] text-text-muted">
-                          {entry.workerId
-                            ? `Worker ${entry.workerId}`
-                            : "Waiting"}{" "}
-                          | {formatStepLabel(entry.step)}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-[11px] text-text-muted">
-                        {formatClock(entry.at)}
-                      </span>
+              {failedGroups.map((group) => (
+                <div
+                  key={group.status}
+                  className="rounded-xl border border-border p-3"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <AccountStatusBadge status={group.status} />
+                      <p className="text-sm font-semibold capitalize">
+                        {formatStepLabel(group.status)}
+                      </p>
                     </div>
-                    <p className="mt-2 text-xs text-text-muted">
-                      {entry.message}
+                    <p className="text-xs text-text-muted">
+                      {group.accounts.length}
                     </p>
                   </div>
-                ))}
-              </div>
+
+                  <div className="space-y-2">
+                    {group.accounts.map((account) => (
+                      <AccountCard
+                        key={`${account.email}-${account.line}`}
+                        account={account}
+                        formatStepLabel={formatStepLabel}
+                        formatClock={formatClock}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -126,6 +126,17 @@ export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 // CONFIG-named references used by the OAuth service + providers map working.
 export const AUTOCLOW_CONFIG = { ...PROVIDER_OAUTH["autoclaw"] };
 
+// Livscene Configuration (Google OAuth via ai.livscene.com sign-up page)
+export const LIVSCENE_CONFIG = {
+  providerId: "livscene",
+  label: "Livscene",
+  baseUrl: "https://ai.livscene.com",
+  googleClientId:
+    "370343779570-r8ar5hcq2f6cf9asc9e0opilgfupmav5.apps.googleusercontent.com",
+  googleRedirectUri: "https://ai.livscene.com/oauth/google-oauth",
+  defaultAff: "Km2H",
+};
+
 // Grok CLI / Grok Build OAuth Configuration (Device Code Flow)
 // Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
 export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
@@ -226,6 +237,7 @@ export const PROVIDERS = {
   CODEBUDDY_INTL: "codebuddy-intl",
   KIMCHI: "kimchi",
   AUTOCLOW: "autoclaw",
+  LIVSCENE: "livscene",
   GROK_CLI: "grok-cli",
   TRAE: "trae",
   WINDSURF: "windsurf",

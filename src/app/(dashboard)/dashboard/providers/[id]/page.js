@@ -553,10 +553,14 @@ export default function ProviderDetailPage() {
     return () => { cancelled = true; };
   }, [providerId, connections]);
 
-  // AutoClaw: fetch wallet balance per connection so we can render it inline
-  // next to each connection row. Balance = reward points, refreshed on mount.
+  // AutoClaw/Livscene: fetch balance per connection so we can render it inline
+  // next to each connection row. Refreshed on mount.
   useEffect(() => {
-    if (providerId !== "autoclaw" || connections.length === 0) return;
+    if (
+      !["autoclaw", "livscene"].includes(providerId) ||
+      connections.length === 0
+    )
+      return;
     let cancelled = false;
     (async () => {
       const entries = await Promise.all(
@@ -565,10 +569,10 @@ export default function ProviderDetailPage() {
             const res = await fetch(`/api/usage/${conn.id}`);
             if (!res.ok) return [conn.id, null];
             const data = await res.json();
-            // /api/usage/[id] returns the usage object directly, so quotas
-            // live at data.quotas (not data.usage.quotas).
-            const points = data?.quotas?.Points?.remaining;
-            return [conn.id, typeof points === "number" ? points : null];
+            const quotas = data?.quotas || {};
+            const key = providerId === "autoclaw" ? "Points" : "Credits";
+            const remaining = quotas[key]?.remaining;
+            return [conn.id, typeof remaining === "number" ? remaining : null];
           } catch {
             return [conn.id, null];
           }
@@ -907,6 +911,34 @@ export default function ProviderDetailPage() {
     });
   };
 
+  const handleBulkToggleActive = async (enable) => {
+    const count = selectedConnectionIds.length;
+    if (count === 0) return;
+    let failed = 0;
+    for (const id of [...selectedConnectionIds]) {
+      try {
+        const res = await fetch(`/api/providers/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: enable }),
+        });
+        if (!res.ok) failed += 1;
+      } catch (error) {
+        console.log("Error toggling connection:", error);
+        failed += 1;
+      }
+    }
+    setConnections((prev) =>
+      prev.map((c) =>
+        selectedConnectionIds.includes(c.id) ? { ...c, isActive: enable } : c,
+      ),
+    );
+    if (failed > 0)
+      alert(
+        `${enable ? "Enabled" : "Disabled"} ${count - failed} connection(s), ${failed} failed.`,
+      );
+  };
+
   const handleOAuthSuccess = () => {
     fetchConnections();
     setShowOAuthModal(false);
@@ -1146,7 +1178,7 @@ export default function ProviderDetailPage() {
               isFirst={index === 0}
               isLast={index === connections.length - 1}
               balance={
-                providerId === "autoclaw"
+                ["autoclaw", "livscene"].includes(providerId)
                   ? autoclawBalances[conn.id]
                   : undefined
               }
@@ -1414,8 +1446,8 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
-        {/* Import Qoder models button — only show for qoder provider */}
-        {providerId === "qoder" &&
+        {/* Fetch models button — show for providers that support model listing */}
+        {["qoder", "livscene"].includes(providerId) &&
           connections.some((conn) => conn.isActive !== false) && (
             <button
               onClick={handleImportQoderModels}
@@ -1434,7 +1466,7 @@ export default function ProviderDetailPage() {
               </span>
               {importingQoderModels
                 ? translate("Fetching...")
-                : translate("Fetch Qoder Models")}
+                : translate("Fetch Models")}
             </button>
           )}
 
@@ -1747,14 +1779,32 @@ export default function ProviderDetailPage() {
               {connections.length > 0 && (
                 <>
                   {selectedConnectionIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      icon="delete"
-                      onClick={handleBulkDelete}
-                    >
-                      Delete Selected ({selectedConnectionIds.length})
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="check_circle"
+                        onClick={() => handleBulkToggleActive(true)}
+                      >
+                        Enable Selected ({selectedConnectionIds.length})
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="block"
+                        onClick={() => handleBulkToggleActive(false)}
+                      >
+                        Disable Selected ({selectedConnectionIds.length})
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon="delete"
+                        onClick={handleBulkDelete}
+                      >
+                        Delete Selected ({selectedConnectionIds.length})
+                      </Button>
+                    </>
                   )}
                   <Button
                     size="sm"

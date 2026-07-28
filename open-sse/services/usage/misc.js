@@ -365,3 +365,71 @@ export async function getAutoClawUsage(accessToken, proxyOptions = null) {
     return { message: `AutoClaw error: ${error.message}` };
   }
 }
+
+/**
+ * Livscene balance — uses session cookies (captured during bulk automation)
+ * to call /api/user/self which returns the user's quota.
+ * The API key alone can't access this endpoint; session cookies are required.
+ */
+export async function getLivsceneUsage(connection, proxyOptions = null) {
+  const cookies = connection?.providerSpecificData?.sessionCookies;
+  const userId = connection?.providerSpecificData?.livsceneUserId;
+  if (!cookies || !userId) {
+    const initial = connection?.providerSpecificData?.initialQuota;
+    if (initial != null) {
+      return {
+        plan: "Livscene",
+        quotas: {
+          Credits: {
+            used: 0,
+            total: initial / 500000,
+            remaining: initial / 500000,
+            remainingPercentage: 100,
+            unlimited: false,
+          },
+        },
+      };
+    }
+    return {
+      message:
+        "Livscene session cookies not available. Re-run bulk automation to capture balance.",
+    };
+  }
+
+  try {
+    const res = await proxyAwareFetch(
+      "https://ai.livscene.com/api/user/self",
+      {
+        headers: {
+          cookie: cookies,
+          "new-api-user": String(userId),
+        },
+      },
+      proxyOptions,
+    );
+
+    if (!res.ok) {
+      return { message: `Livscene balance error: ${res.status}` };
+    }
+
+    const data = await res.json();
+    const quota = data?.data?.quota ?? 0;
+    // new-api quota: 500000 units = $1
+    const balanceUsd = quota / 500000;
+
+    return {
+      plan: "Livscene",
+      quotas: {
+        Credits: {
+          used: 0,
+          total: balanceUsd,
+          remaining: balanceUsd,
+          remainingPercentage: 100,
+          unlimited: false,
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `Livscene error: ${error.message}` };
+  }
+}
