@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
@@ -704,4 +705,144 @@ export async function refreshWindsurfToken(credentials, log) {
     "windsurf: apiKey is long-lived (no refresh_token flow) — skipping"
   );
   return null;
+}
+/**
+ * AutoClaw token refresh.
+ *
+ * Uses the app-signing header contract (X-Auth-Appid / X-Auth-TimeStamp / X-Auth-Sign
+ * = md5(`${APP_ID}&${ts}&${APP_KEY}`)) and POSTs { source_id, device_id, refresh_token }
+ * to /userapi/v1/refresh. The response is a { code, msg, data } envelope where data
+ * holds { access_token, refresh_token }. access_token is a JWT (TTL 24h) whose payload
+ * carries the authoritative device_id used for subsequent refreshes.
+ *
+ * source_id is stored at login time (providerSpecificData.sourceId) and defaults to
+ * "autoclaw" — the spec notes an underspecified variant ("autoclawaccess_token") but
+ * the verified working value for /refresh is "autoclaw".
+ */
+export async function refreshAutoClawToken(
+  refreshToken,
+  providerSpecificData,
+  log,
+  proxyOptions = null,
+) {
+  if (!refreshToken) return null;
+  return dedupRefresh(
+    "autoclaw",
+    refreshToken,
+    async () => {
+      const oauth = PROVIDER_OAUTH["autoclaw"] || {};
+      const appId = oauth.appId || "100003";
+      const appKey = oauth.appKey || "38d2391985e2369a5fb8227d8e6cd5e5";
+      const refreshUrl =
+        oauth.refreshUrl || "https://autoglm-api.autoglm.ai/userapi/v1/refresh";
+      const sourceId =
+        providerSpecificData?.sourceId || oauth.sourceId || "autoclaw";
+      const deviceId = providerSpecificData?.deviceId;
+
+      if (!deviceId) {
+        log?.error?.(
+          "TOKEN_REFRESH",
+          "AutoClaw refresh requires deviceId in providerSpecificData",
+        );
+        return null;
+      }
+
+      const ts = String(Math.floor(Date.now() / 1000));
+      const sign = crypto
+        .createHash("md5")
+        .update(`${appId}&${ts}&${appKey}`)
+        .digest("hex");
+      const headers = {
+        "X-Auth-Appid": appId,
+        "X-Auth-TimeStamp": ts,
+        "X-Auth-Sign": sign,
+        "X-Product": "autoclaw",
+        "X-Version": "1.9.1",
+        "X-Tm": "win",
+        "X-Trace-Id": crypto.randomUUID(),
+        "Content-Type": "application/json",
+      };
+
+      const response = await proxyAwareFetch(
+        refreshUrl,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            source_id: sourceId,
+            device_id: deviceId,
+            refresh_token: refreshToken,
+          }),
+        },
+        proxyOptions,
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh AutoClaw token", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const resp = await response.json();
+      // { code, msg, data } envelope — code 0 / null means success.
+      if (resp.code != null && resp.code !== 0) {
+        log?.error?.("TOKEN_REFRESH", "AutoClaw refresh API error", {
+          code: resp.code,
+          msg: resp.msg,
+        });
+        return null;
+      }
+      const data = resp.data || {};
+      let at = data.access_token || "";
+      let rt = data.refresh_token || refreshToken;
+      if (at.startsWith("Bearer ")) at = at.slice(7);
+      if (rt.startsWith("Bearer ")) rt = rt.slice(7);
+      if (!at) {
+        log?.error?.(
+          "TOKEN_REFRESH",
+          "AutoClaw refresh response missing access_token",
+          { data },
+        );
+        return null;
+      }
+
+      // Decode JWT exp (no verification) for refresh-lead scheduling.
+      const exp = decodeJwtExp(at);
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed AutoClaw token", {
+        hasNewAccessToken: !!at,
+        hasNewRefreshToken: rt !== refreshToken,
+        exp: exp ? new Date(exp * 1000).toISOString() : null,
+      });
+
+      return {
+        accessToken: at,
+        refreshToken: rt,
+        expiresIn: exp
+          ? Math.max(1, exp - Math.floor(Date.now() / 1000))
+          : 86400,
+        providerSpecificData: { sourceId, deviceId },
+      };
+    },
+    log,
+  );
+}
+
+/** Decode JWT payload exp (no verification). Returns seconds since epoch or null. */
+function decodeJwtExp(token) {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const json = JSON.parse(
+      Buffer.from(
+        payload + "=".repeat(-payload.length % 4),
+        "base64url",
+      ).toString("utf8"),
+    );
+    return typeof json.exp === "number" ? json.exp : null;
+  } catch {
+    return null;
+  }
 }

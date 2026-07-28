@@ -226,8 +226,10 @@ export default [
   p98,
   p99,
   p100,
-  // p102, // trae — hidden, no tool calling
+  p101,
+  p102,
   p103,
+  p104,
   p105,
   p106,
   p107,

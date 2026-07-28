@@ -87,6 +87,10 @@ async function launchCamoufox({ proxyUrl, headless = true } = {}) {
       const parsed = new URL(proxyUrl);
       const proxyConfig = {
         server: `${parsed.protocol}//${parsed.hostname}:${parsed.port}`,
+        // Bypass localhost from proxy — otherwise redirects to
+        // http://localhost:18432 (AutoClaw callback) go through remote proxy
+        // which can't reach the loopback interface → "Unable to connect".
+        bypass: "localhost,127.0.0.1,<-loopback>",
       };
       if (parsed.username)
         proxyConfig.username = decodeURIComponent(parsed.username);
@@ -94,7 +98,10 @@ async function launchCamoufox({ proxyUrl, headless = true } = {}) {
         proxyConfig.password = decodeURIComponent(parsed.password);
       launchOptions.proxy = proxyConfig;
     } catch {
-      launchOptions.proxy = { server: proxyUrl };
+      launchOptions.proxy = {
+        server: proxyUrl,
+        bypass: "localhost,127.0.0.1,<-loopback>",
+      };
     }
   }
 

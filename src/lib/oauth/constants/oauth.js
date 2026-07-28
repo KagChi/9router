@@ -120,6 +120,12 @@ export const CODEBUDDY_INTL_CONFIG = { ...PROVIDER_OAUTH["codebuddy-intl"] };
 // Kimchi OAuth Configuration (Browser token callback flow)
 export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 
+// AutoClaw OAuth Configuration (Google OAuth via AutoClaw overseas endpoint)
+// App-signing credentials (appId/appKey) + Google OAuth client + redirect port
+// are all declared in the registry entry; this re-export keeps the legacy
+// CONFIG-named references used by the OAuth service + providers map working.
+export const AUTOCLOW_CONFIG = { ...PROVIDER_OAUTH["autoclaw"] };
+
 // Grok CLI / Grok Build OAuth Configuration (Device Code Flow)
 // Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
 export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
@@ -219,6 +225,7 @@ export const PROVIDERS = {
   CODEBUDDY: "codebuddy-cn",
   CODEBUDDY_INTL: "codebuddy-intl",
   KIMCHI: "kimchi",
+  AUTOCLOW: "autoclaw",
   GROK_CLI: "grok-cli",
   TRAE: "trae",
   WINDSURF: "windsurf",

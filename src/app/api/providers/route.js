@@ -217,6 +217,16 @@ export async function POST(request) {
           { status: 404 },
         );
       }
+      const existingConnections = await getProviderConnections({ provider });
+      if (existingConnections.length > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Only one connection is allowed for this Custom Embedding node",
+          },
+          { status: 400 },
+        );
+      }
       providerSpecificData = {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
@@ -235,6 +245,31 @@ export async function POST(request) {
       mergedProviderSpecificData.proxyPoolId = proxyPoolId;
     }
 
+    // AutoClaw: the imported "API key" is actually a JWT access_token (TTL 24h).
+    // Decode exp so the dashboard can show expiry and the usage route can
+    // trigger refresh (refresh_token is absent in apikey mode — the user must
+    // re-import when it expires, unless they connected via OAuth).
+    let expiresAt = null;
+    if (provider === "autoclaw" && apiKey) {
+      const token = apiKey.replace(/^Bearer\s+/i, "");
+      if (token.split(".").length === 3) {
+        try {
+          const payload = token.split(".")[1];
+          const json = JSON.parse(
+            Buffer.from(
+              payload + "=".repeat(-payload.length % 4),
+              "base64url",
+            ).toString("utf8"),
+          );
+          if (typeof json.exp === "number") {
+            expiresAt = new Date(json.exp * 1000).toISOString();
+          }
+        } catch {
+          // Not a valid JWT — skip expiry.
+        }
+      }
+    }
+
     const newConnection = await createProviderConnection({
       provider,
       authType: isWebCookieProvider ? "cookie" : "apikey",
@@ -246,6 +281,7 @@ export async function POST(request) {
       providerSpecificData: mergedProviderSpecificData,
       isActive: true,
       testStatus: testStatus || "unknown",
+      ...(expiresAt ? { expiresAt } : {}),
     });
 
     // Hide sensitive fields

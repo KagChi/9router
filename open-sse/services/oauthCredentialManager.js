@@ -25,8 +25,22 @@ function toExpiresAt(expiresIn, nowMs = Date.now()) {
   return new Date(nowMs + expiresIn * 1000).toISOString();
 }
 
+function decodeJwtExpMs(token) {
+  if (typeof token !== "string" || token.split(".").length < 2) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+    if (typeof payload?.exp !== "number") return null;
+    return payload.exp * 1000;
+  } catch {
+    return null;
+  }
+}
+
 export function getCredentialExpiryMs(credentials) {
-  return parseTimeMs(credentials?.expiresAt ?? credentials?.tokenExpiresAt);
+  const fromField = parseTimeMs(credentials?.expiresAt ?? credentials?.tokenExpiresAt);
+  if (fromField !== null) return fromField;
+  // Fallback: decode JWT exp claim from access token (handles connections saved without expiresAt)
+  return decodeJwtExpMs(credentials?.accessToken);
 }
 
 export function getCredentialLastRefreshMs(credentials) {

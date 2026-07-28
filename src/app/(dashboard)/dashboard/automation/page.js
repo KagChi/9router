@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
@@ -8,7 +9,7 @@ import {
   CardSkeleton,
   OAuthModal,
 } from "@/shared/components";
-import { FREE_PROVIDERS } from "@/shared/constants/providers";
+import { FREE_PROVIDERS, OAUTH_PROVIDERS } from "@/shared/constants/providers";
 
 function getConnectionLabel(count) {
   return `${count} connection${count === 1 ? "" : "s"}`;
@@ -76,6 +77,59 @@ function QoderAutomationPanel({ providerInfo, onRefresh }) {
   );
 }
 
+function AutoClawAutomationPanel({ providerInfo, onRefresh }) {
+  const [isOAuthOpen, setIsOAuthOpen] = useState(false);
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <Link
+          href="/dashboard/automation/autoclaw/bulk"
+          className="flex min-h-[112px] min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <span className="material-symbols-outlined text-[20px] text-primary">
+              group_add
+            </span>
+            Auto Login Bulk
+          </span>
+          <span className="text-xs leading-relaxed text-text-muted">
+            Run bulk gmail:password or gmail|password automation via Google
+            OAuth with AutoClaw. Workers run one at a time (AutoClaw&apos;s
+            Google client locks the redirect port).
+          </span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => setIsOAuthOpen(true)}
+          className="flex min-h-[112px] min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold text-text-main">
+            <span className="material-symbols-outlined text-[20px] text-primary">
+              login
+            </span>
+            Device OAuth Login
+          </span>
+          <span className="text-xs leading-relaxed text-text-muted">
+            Open AutoClaw Google login in browser and wait until the token is
+            saved.
+          </span>
+        </button>
+      </div>
+      <OAuthModal
+        isOpen={isOAuthOpen}
+        provider="autoclaw"
+        providerInfo={providerInfo}
+        onSuccess={() => {
+          onRefresh?.();
+          setIsOAuthOpen(false);
+        }}
+        onClose={() => setIsOAuthOpen(false)}
+      />
+    </>
+  );
+}
+
 function CodeBuddyAutomationPanel({ providerInfo, onRefresh }) {
   const [isOAuthOpen, setIsOAuthOpen] = useState(false);
 
@@ -121,6 +175,14 @@ const AUTOMATION_PROVIDERS = [
     description: "Bulk GSuite auto login via Google SSO and device flow.",
     supportedModes: ["bulk-account", "device-oauth"],
     component: QoderAutomationPanel,
+  },
+  {
+    id: "autoclaw",
+    label: "AutoClaw",
+    icon: "smart_toy",
+    description: "Bulk Google OAuth auto login via AutoClaw and device OAuth.",
+    supportedModes: ["bulk-account", "device-oauth"],
+    component: AutoClawAutomationPanel,
   },
   {
     id: "codebuddy-cn",
@@ -170,10 +232,11 @@ export default function AutomationPage() {
   const activeProvider =
     AUTOMATION_PROVIDERS.find((provider) => provider.id === activeProviderId) ||
     AUTOMATION_PROVIDERS[0];
-  const providerInfo = FREE_PROVIDERS[activeProvider.id] || {
-    id: activeProvider.id,
-    name: activeProvider.label,
-  };
+  const providerInfo = FREE_PROVIDERS[activeProvider.id] ||
+    OAUTH_PROVIDERS[activeProvider.id] || {
+      id: activeProvider.id,
+      name: activeProvider.label,
+    };
   const ProviderPanel = activeProvider.component;
   const providerCounts = useMemo(() => {
     const counts = {};
