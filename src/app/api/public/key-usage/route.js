@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
-import { getUsageByKeyName, getSettings, getModelAliases, getProviderNodes } from "@/lib/localDb";
+import {
+  getUsageByKeyName,
+  getSettings,
+  getModelAliases,
+  getProviderNodes,
+  getCombos,
+} from "@/lib/localDb";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
-import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
+import {
+  checkLock,
+  recordFail,
+  recordSuccess,
+  getClientIp,
+} from "@/lib/auth/loginLimiter";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +28,11 @@ export async function POST(request) {
     const lock = checkLock(ip);
     if (lock.locked) {
       return NextResponse.json(
-        { error: `Too many attempts. Try again in ${lock.retryAfter}s.`, retryAfter: lock.retryAfter },
-        { status: 429, headers: { "Retry-After": String(lock.retryAfter) } }
+        {
+          error: `Too many attempts. Try again in ${lock.retryAfter}s.`,
+          retryAfter: lock.retryAfter,
+        },
+        { status: 429, headers: { "Retry-After": String(lock.retryAfter) } },
       );
     }
 
@@ -30,7 +44,10 @@ export async function POST(request) {
 
     // Feature is opt-in: disabled until an admin sets a lookup password.
     if (!expected) {
-      return NextResponse.json({ error: "Usage lookup is disabled" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Usage lookup is disabled" },
+        { status: 403 },
+      );
     }
 
     if (typeof password !== "string" || password !== expected) {
@@ -38,8 +55,11 @@ export async function POST(request) {
       const post = checkLock(ip);
       if (post.locked) {
         return NextResponse.json(
-          { error: `Too many attempts. Try again in ${post.retryAfter}s.`, retryAfter: post.retryAfter },
-          { status: 429, headers: { "Retry-After": String(post.retryAfter) } }
+          {
+            error: `Too many attempts. Try again in ${post.retryAfter}s.`,
+            retryAfter: post.retryAfter,
+          },
+          { status: 429, headers: { "Retry-After": String(post.retryAfter) } },
         );
       }
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
@@ -53,7 +73,13 @@ export async function POST(request) {
     const period = ALLOWED_PERIODS.includes(periodParam) ? periodParam : null;
     const results = await getUsageByKeyName(name, { period, includeKey: true });
     let aliases = {};
-    try { aliases = await getModelAliases(); } catch {}
+    let combos = [];
+    try {
+      aliases = await getModelAliases();
+    } catch {}
+    try {
+      combos = await getCombos();
+    } catch {}
 
     // Resolve excluded provider ids to friendly names (custom node name / known provider name).
     const excludedRaw = Array.isArray(settings.tokenLimitExcludedProviders)
@@ -63,18 +89,33 @@ export async function POST(request) {
     try {
       const nodes = await getProviderNodes();
       const nodeMap = {};
-      for (const n of nodes) if (n.id) nodeMap[n.id] = n.name || n.prefix || n.id;
+      for (const n of nodes)
+        if (n.id) nodeMap[n.id] = n.name || n.prefix || n.id;
       excludedProviders = excludedRaw.map((id) => ({
         id,
         name: AI_PROVIDERS[id]?.name || nodeMap[id] || id,
       }));
     } catch {
-      excludedProviders = excludedRaw.map((id) => ({ id, name: AI_PROVIDERS[id]?.name || id }));
+      excludedProviders = excludedRaw.map((id) => ({
+        id,
+        name: AI_PROVIDERS[id]?.name || id,
+      }));
     }
 
-    return NextResponse.json({ name: name.trim(), period, count: results.length, results, aliases, excludedProviders });
+    return NextResponse.json({
+      name: name.trim(),
+      period,
+      count: results.length,
+      results,
+      aliases,
+      combos,
+      excludedProviders,
+    });
   } catch (error) {
     console.log("Error looking up key usage:", error);
-    return NextResponse.json({ error: "Failed to look up usage" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to look up usage" },
+      { status: 500 },
+    );
   }
 }

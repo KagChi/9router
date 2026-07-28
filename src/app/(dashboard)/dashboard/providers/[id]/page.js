@@ -151,6 +151,48 @@ export default function ProviderDetailPage() {
     triggerApiKeyConnection();
   };
 
+  const importFileRef = useRef(null);
+
+  const handleExportConnections = async () => {
+    try {
+      const res = await fetch(`/api/providers/${providerId}/export`);
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${providerId}-connections.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Export failed: " + e.message);
+    }
+  };
+
+  const handleImportConnections = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await fetch(`/api/providers/${providerId}/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Import failed");
+      alert(
+        `Imported: ${result.imported}${result.skipped ? `, Skipped: ${result.skipped}` : ""}`,
+      );
+      fetchConnections();
+    } catch (err) {
+      alert("Import failed: " + err.message);
+    } finally {
+      e.target.value = "";
+    }
+  };
+
   const handleAgRiskConfirm = () => {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(AG_RISK_STORAGE_KEY, "true");
@@ -1990,6 +2032,31 @@ export default function ProviderDetailPage() {
                     >
                       {isCompatible ? "Add API Key" : (providerId === "iflow" ? "OAuth" : "Add Connection")}
                     </Button>
+                    {connections.length > 0 && (
+                      <Button
+                        size="sm"
+                        icon="download"
+                        variant="secondary"
+                        onClick={handleExportConnections}
+                      >
+                        Export
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      icon="upload"
+                      variant="secondary"
+                      onClick={() => importFileRef.current?.click()}
+                    >
+                      Import
+                    </Button>
+                    <input
+                      ref={importFileRef}
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={handleImportConnections}
+                    />
                   </>
                 )}
               </div>
