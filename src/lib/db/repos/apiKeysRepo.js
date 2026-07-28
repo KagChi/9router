@@ -11,7 +11,9 @@ function parseAllowedModels(raw) {
   if (!raw) return [];
   try {
     const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr.filter((m) => typeof m === "string" && m.trim()) : [];
+    return Array.isArray(arr)
+      ? arr.filter((m) => typeof m === "string" && m.trim())
+      : [];
   } catch {
     return [];
   }
@@ -71,7 +73,18 @@ export async function createApiKey(name, machineId, options = {}) {
   };
   db.run(
     `INSERT INTO apiKeys(id, key, name, machineId, isActive, tokenLimit, limitWindow, rpmLimit, allowedModels, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, tokenLimit, limitWindow, rpmLimit, JSON.stringify(allowedModels), apiKey.createdAt]
+    [
+      apiKey.id,
+      apiKey.key,
+      apiKey.name,
+      apiKey.machineId,
+      1,
+      tokenLimit,
+      limitWindow,
+      rpmLimit,
+      JSON.stringify(allowedModels),
+      apiKey.createdAt,
+    ],
   );
   return apiKey;
 }
@@ -91,7 +104,17 @@ export async function updateApiKey(id, data) {
       : [];
     db.run(
       `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, tokenLimit = ?, limitWindow = ?, rpmLimit = ?, allowedModels = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.tokenLimit, merged.limitWindow, merged.rpmLimit, JSON.stringify(merged.allowedModels), id]
+      [
+        merged.key,
+        merged.name,
+        merged.machineId,
+        merged.isActive ? 1 : 0,
+        merged.tokenLimit,
+        merged.limitWindow,
+        merged.rpmLimit,
+        JSON.stringify(merged.allowedModels),
+        id,
+      ],
     );
     result = merged;
   });
@@ -121,7 +144,11 @@ function cutoffIsoFor(range) {
   switch (range) {
     case "daily":
     case "today":
-      return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      return new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+      ).toISOString();
     case "monthly":
       return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
     case "7d":
@@ -144,7 +171,11 @@ async function getExcludedProviders() {
     const { getSettings } = await import("./settingsRepo.js");
     const s = await getSettings();
     const list = s?.tokenLimitExcludedProviders;
-    return Array.isArray(list) ? list.filter((p) => typeof p === "string" && p.trim()).map((p) => p.trim()) : [];
+    return Array.isArray(list)
+      ? list
+          .filter((p) => typeof p === "string" && p.trim())
+          .map((p) => p.trim())
+      : [];
   } catch {
     return [];
   }
@@ -161,7 +192,13 @@ async function getExcludedProviders() {
  * @param {boolean} ignoreReset - when true, ignore the manual reset marker (show real usage)
  * @returns {Promise<number>}
  */
-export async function getApiKeyUsedTokens(key, window = "monthly", resetAt = null, excludeProviders = null, ignoreReset = false) {
+export async function getApiKeyUsedTokens(
+  key,
+  window = "monthly",
+  resetAt = null,
+  excludeProviders = null,
+  ignoreReset = false,
+) {
   if (!key) return 0;
   const db = await getAdapter();
   const windowCutoff = cutoffIsoFor(window);
@@ -169,7 +206,8 @@ export async function getApiKeyUsedTokens(key, window = "monthly", resetAt = nul
   // Effective cutoff = the later of window-start and manual-reset marker.
   // When ignoreReset is set, the reset marker is not applied (true window usage).
   let cutoff = windowCutoff;
-  if (!ignoreReset && resetAt && (!cutoff || resetAt > cutoff)) cutoff = resetAt;
+  if (!ignoreReset && resetAt && (!cutoff || resetAt > cutoff))
+    cutoff = resetAt;
 
   const excluded = excludeProviders ?? (await getExcludedProviders());
 
@@ -193,10 +231,22 @@ export async function getApiKeyUsedTokens(key, window = "monthly", resetAt = nul
  * @returns {Promise<{exists:boolean, hasLimit:boolean, exceeded:boolean, limit:number, used:number, remaining:number, window:string, resetAt:string|null}>}
  */
 export async function getApiKeyLimitStatus(key) {
-  const base = { exists: false, hasLimit: false, exceeded: false, limit: 0, used: 0, remaining: 0, window: "monthly", resetAt: null };
+  const base = {
+    exists: false,
+    hasLimit: false,
+    exceeded: false,
+    limit: 0,
+    used: 0,
+    remaining: 0,
+    window: "monthly",
+    resetAt: null,
+  };
   if (!key) return base;
   const db = await getAdapter();
-  const row = db.get(`SELECT tokenLimit, limitWindow, limitResetAt FROM apiKeys WHERE key = ?`, [key]);
+  const row = db.get(
+    `SELECT tokenLimit, limitWindow, limitResetAt FROM apiKeys WHERE key = ?`,
+    [key],
+  );
   if (!row) return base;
 
   const limit = Number(row.tokenLimit) || 0;
@@ -229,7 +279,10 @@ export async function getApiKeyLimitStatus(key) {
 export async function resetApiKeyLimit(id) {
   const db = await getAdapter();
   const now = new Date().toISOString();
-  const res = db.run(`UPDATE apiKeys SET limitResetAt = ? WHERE id = ?`, [now, id]);
+  const res = db.run(`UPDATE apiKeys SET limitResetAt = ? WHERE id = ?`, [
+    now,
+    id,
+  ]);
   if ((res?.changes ?? 0) === 0) return null;
   return { id, limitResetAt: now };
 }
@@ -248,7 +301,10 @@ export async function getUsageByKeyName(name, opts = {}) {
   const period = opts.period || null;
   const includeKey = opts.includeKey === true;
   const db = await getAdapter();
-  const rows = db.all(`SELECT * FROM apiKeys WHERE name = ? COLLATE NOCASE ORDER BY createdAt ASC`, [name.trim()]);
+  const rows = db.all(
+    `SELECT * FROM apiKeys WHERE name = ? COLLATE NOCASE ORDER BY createdAt ASC`,
+    [name.trim()],
+  );
   const keys = rows.map(rowToKey);
 
   const excluded = await getExcludedProviders();
@@ -258,13 +314,49 @@ export async function getUsageByKeyName(name, opts = {}) {
     const detailRange = period || k.limitWindow;
 
     // Limit counter: respects the manual reset marker (this is what enforcement uses).
-    const usedWindow = await getApiKeyUsedTokens(k.key, k.limitWindow, k.limitResetAt, excluded);
+    const usedWindow = await getApiKeyUsedTokens(
+      k.key,
+      k.limitWindow,
+      k.limitResetAt,
+      excluded,
+    );
 
     // Display figures: ignore the reset marker so real usage is always visible.
-    const usedWindowActual = await getApiKeyUsedTokens(k.key, k.limitWindow, null, excluded, true);
-    const usedTotal = await getApiKeyUsedTokens(k.key, "total", null, excluded, true);
-    const usedPeriod = await getApiKeyUsedTokens(k.key, detailRange, null, excluded, true);
-    const models = await getApiKeyModelBreakdown(k.key, detailRange, null, excluded, true);
+    const usedWindowActual = await getApiKeyUsedTokens(
+      k.key,
+      k.limitWindow,
+      null,
+      excluded,
+      true,
+    );
+    const usedTotal = await getApiKeyUsedTokens(
+      k.key,
+      "total",
+      null,
+      excluded,
+      true,
+    );
+    const usedPeriod = await getApiKeyUsedTokens(
+      k.key,
+      detailRange,
+      null,
+      excluded,
+      true,
+    );
+    const models = await getApiKeyModelBreakdown(
+      k.key,
+      detailRange,
+      null,
+      excluded,
+      true,
+    );
+
+    // Daily sparkline for the last 14 days (used by public usage-check UI).
+    let chart = [];
+    try {
+      const { getApiKeyDailyChart } = await import("./usageRepo.js");
+      chart = await getApiKeyDailyChart(k.key, 14);
+    } catch {}
 
     out.push({
       name: k.name,
@@ -280,9 +372,11 @@ export async function getUsageByKeyName(name, opts = {}) {
       usedPeriod,
       period: period || null,
       detailRange,
-      remaining: k.tokenLimit > 0 ? Math.max(0, k.tokenLimit - usedWindow) : null,
+      remaining:
+        k.tokenLimit > 0 ? Math.max(0, k.tokenLimit - usedWindow) : null,
       exceeded: k.tokenLimit > 0 ? usedWindow >= k.tokenLimit : false,
       models,
+      chart,
       createdAt: k.createdAt,
     });
   }
@@ -320,12 +414,19 @@ export async function getApiKeyRpmLimit(key) {
  * Per-model token breakdown for an API key within a window (respecting reset + exclusions).
  * @returns {Promise<Array<{model:string, provider:string, requests:number, promptTokens:number, completionTokens:number, totalTokens:number}>>}
  */
-export async function getApiKeyModelBreakdown(key, window = "monthly", resetAt = null, excludeProviders = null, ignoreReset = false) {
+export async function getApiKeyModelBreakdown(
+  key,
+  window = "monthly",
+  resetAt = null,
+  excludeProviders = null,
+  ignoreReset = false,
+) {
   if (!key) return [];
   const db = await getAdapter();
   const windowCutoff = cutoffIsoFor(window);
   let cutoff = windowCutoff;
-  if (!ignoreReset && resetAt && (!cutoff || resetAt > cutoff)) cutoff = resetAt;
+  if (!ignoreReset && resetAt && (!cutoff || resetAt > cutoff))
+    cutoff = resetAt;
 
   const excluded = excludeProviders ?? (await getExcludedProviders());
 
