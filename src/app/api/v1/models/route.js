@@ -5,7 +5,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getApiKeyAllowedModels } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -562,7 +562,30 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    let data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+
+    // If the request carries an API key with an allow-list, filter the catalog
+    // to that key's available models (alias-aware: alias and target are equivalent).
+    try {
+      const authHeader = request?.headers?.get("Authorization");
+      const apiKey = authHeader?.startsWith("Bearer ")
+        ? authHeader.slice(7)
+        : request?.headers?.get("x-api-key");
+      if (apiKey) {
+        const allowed = await getApiKeyAllowedModels(apiKey);
+        if (allowed.length) {
+          const aliases = (await getModelAliases()) || {};
+          const expanded = new Set(allowed);
+          for (const a of allowed) if (aliases[a]) expanded.add(String(aliases[a]));
+          data = data.filter((m) => {
+            if (expanded.has(m.id)) return true;
+            const resolved = aliases[m.id] ? String(aliases[m.id]) : null;
+            return resolved ? expanded.has(resolved) : false;
+          });
+        }
+      }
+    } catch { /* fail open: return full catalog on any error */ }
+
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
