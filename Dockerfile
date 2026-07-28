@@ -16,7 +16,7 @@ RUN apk add --no-cache python3 make g++ linux-headers
 
 COPY package.json ./
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-  bun install --no-optional --registry=https://registry.npmmirror.com
+  bun install --ignore-scripts --registry=https://registry.npmmirror.com
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
