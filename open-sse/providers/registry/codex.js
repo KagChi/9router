@@ -40,6 +40,12 @@ export default {
     format: "openai-responses",
     forceStream: true,
     cliVersion: CODEX_CLI_VERSION,
+    timeoutMs: 120000,
+    retry: {
+      502: { attempts: 5, delayMs: 3000 },
+      503: { attempts: 3, delayMs: 2000 },
+      504: { attempts: 3, delayMs: 3000 }
+    },
     headers: {
       originator: "codex_cli_rs",
       "User-Agent": `codex_cli_rs/${CODEX_CLI_VERSION}`,
