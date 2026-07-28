@@ -550,10 +550,14 @@ export default function ProviderDetailPage() {
     return () => { cancelled = true; };
   }, [providerId, connections]);
 
-  // AutoClaw: fetch wallet balance per connection so we can render it inline
-  // next to each connection row. Balance = reward points, refreshed on mount.
+  // AutoClaw/Livscene: fetch balance per connection so we can render it inline
+  // next to each connection row. Refreshed on mount.
   useEffect(() => {
-    if (providerId !== "autoclaw" || connections.length === 0) return;
+    if (
+      !["autoclaw", "livscene"].includes(providerId) ||
+      connections.length === 0
+    )
+      return;
     let cancelled = false;
     (async () => {
       const entries = await Promise.all(
@@ -562,10 +566,10 @@ export default function ProviderDetailPage() {
             const res = await fetch(`/api/usage/${conn.id}`);
             if (!res.ok) return [conn.id, null];
             const data = await res.json();
-            // /api/usage/[id] returns the usage object directly, so quotas
-            // live at data.quotas (not data.usage.quotas).
-            const points = data?.quotas?.Points?.remaining;
-            return [conn.id, typeof points === "number" ? points : null];
+            const quotas = data?.quotas || {};
+            const key = providerId === "autoclaw" ? "Points" : "Credits";
+            const remaining = quotas[key]?.remaining;
+            return [conn.id, typeof remaining === "number" ? remaining : null];
           } catch {
             return [conn.id, null];
           }
@@ -939,6 +943,34 @@ export default function ProviderDetailPage() {
     });
   };
 
+  const handleBulkToggleActive = async (enable) => {
+    const count = selectedConnectionIds.length;
+    if (count === 0) return;
+    let failed = 0;
+    for (const id of [...selectedConnectionIds]) {
+      try {
+        const res = await fetch(`/api/providers/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: enable }),
+        });
+        if (!res.ok) failed += 1;
+      } catch (error) {
+        console.log("Error toggling connection:", error);
+        failed += 1;
+      }
+    }
+    setConnections((prev) =>
+      prev.map((c) =>
+        selectedConnectionIds.includes(c.id) ? { ...c, isActive: enable } : c,
+      ),
+    );
+    if (failed > 0)
+      alert(
+        `${enable ? "Enabled" : "Disabled"} ${count - failed} connection(s), ${failed} failed.`,
+      );
+  };
+
   const handleOAuthSuccess = () => {
     fetchConnections();
     setShowOAuthModal(false);
@@ -1178,7 +1210,7 @@ export default function ProviderDetailPage() {
               isFirst={index === 0}
               isLast={index === connections.length - 1}
               balance={
-                providerId === "autoclaw"
+                ["autoclaw", "livscene"].includes(providerId)
                   ? autoclawBalances[conn.id]
                   : undefined
               }
@@ -1471,6 +1503,20 @@ export default function ProviderDetailPage() {
               {importingClineModels ? "progress_activity" : "download"}
             </span>
             {importingClineModels ? translate("Fetching...") : translate("Import from /models")}
+          </button>
+        )}
+
+        {/* Fetch models button — show for providers that support model listing */}
+        {providerId === "livscene" && connections.some((conn) => conn.isActive !== false) && (
+          <button
+            onClick={handleImportQoderModels}
+            disabled={importingQoderModels}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
+              {importingQoderModels ? "progress_activity" : "download"}
+            </span>
+            {importingQoderModels ? translate("Fetching...") : translate("Fetch Models")}
           </button>
         )}
 
@@ -1783,14 +1829,32 @@ export default function ProviderDetailPage() {
               {connections.length > 0 && (
                 <>
                   {selectedConnectionIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      icon="delete"
-                      onClick={handleBulkDelete}
-                    >
-                      Delete Selected ({selectedConnectionIds.length})
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="check_circle"
+                        onClick={() => handleBulkToggleActive(true)}
+                      >
+                        Enable Selected ({selectedConnectionIds.length})
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="block"
+                        onClick={() => handleBulkToggleActive(false)}
+                      >
+                        Disable Selected ({selectedConnectionIds.length})
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon="delete"
+                        onClick={handleBulkDelete}
+                      >
+                        Delete Selected ({selectedConnectionIds.length})
+                      </Button>
+                    </>
                   )}
                   <Button
                     size="sm"

@@ -130,6 +130,28 @@ function AutoClawAutomationPanel({ providerInfo, onRefresh }) {
   );
 }
 
+function LivsceneAutomationPanel({ providerInfo, onRefresh }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <Link
+        href="/dashboard/automation/livscene/bulk"
+        className="flex min-h-[112px] min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-text-main">
+          <span className="material-symbols-outlined text-[20px] text-primary">
+            group_add
+          </span>
+          Auto Login Bulk
+        </span>
+        <span className="text-xs leading-relaxed text-text-muted">
+          Run bulk gmail:password automation via Google sign-up on Livscene with
+          dynamic referral code. Creates API keys automatically.
+        </span>
+      </Link>
+    </div>
+  );
+}
+
 function CodeBuddyAutomationPanel({ providerInfo, onRefresh }) {
   const [isOAuthOpen, setIsOAuthOpen] = useState(false);
 
@@ -183,6 +205,15 @@ const AUTOMATION_PROVIDERS = [
     description: "Bulk Google OAuth auto login via AutoClaw and device OAuth.",
     supportedModes: ["bulk-account", "device-oauth"],
     component: AutoClawAutomationPanel,
+  },
+  {
+    id: "livscene",
+    label: "Livscene",
+    icon: "smart_toy",
+    description:
+      "Bulk Google sign-up auto login via Livscene with referral code.",
+    supportedModes: ["bulk-account"],
+    component: LivsceneAutomationPanel,
   },
   {
     id: "codebuddy-cn",
