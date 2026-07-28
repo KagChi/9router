@@ -34,6 +34,12 @@ export default {
     baseUrl: "https://chatgpt.com/backend-api/codex/responses",
     format: "openai-responses",
     forceStream: true,
+    timeoutMs: 120000,
+    retry: {
+      502: { attempts: 5, delayMs: 3000 },
+      503: { attempts: 3, delayMs: 2000 },
+      504: { attempts: 3, delayMs: 3000 }
+    },
     headers: {
       originator: "codex_cli_rs",
       "User-Agent": "codex_cli_rs/0.136.0",

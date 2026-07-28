@@ -14,7 +14,16 @@ import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
-const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
+const CODEX_SSE_RETRY_PATTERNS = [
+  "server_is_overloaded",
+  "service_unavailable_error",
+  "bad gateway",
+  "502",
+  "upstream error",
+  "gateway timeout",
+  "504",
+  "temporarily unavailable"
+];
 const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
 const CODEX_SSE_USER_OUTPUT_PATTERNS = [
   "event: response.output_text.delta",
@@ -201,9 +210,11 @@ export class CodexExecutor extends BaseExecutor {
    */
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
-    headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
-    // Identify client type to Codex backend (matches official codex CLI)
-    if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
+    // Match OpenCode: use "session-id" (hyphenated) instead of "session_id"
+    headers["session-id"] = this._currentSessionId || credentials?.connectionId || "default";
+    // Match OpenCode: use "opencode" as originator instead of "codex_cli_rs"
+    if (!headers["originator"]) headers["originator"] = "opencode";
+    // Match OpenCode: use "ChatGPT-Account-Id" (PascalCase-Hyphenated) instead of "ChatGPT-Account-ID"
     // Account/workspace binding header — required when multiple Codex accounts
     // are configured. OAuth import stores ChatGPT account ID as chatgptAccountId;
     // older/custom rows may use workspaceId/accountId. Prefer explicit workspaceId
@@ -213,8 +224,14 @@ export class CodexExecutor extends BaseExecutor {
       credentials?.providerSpecificData?.workspaceId ||
       credentials?.providerSpecificData?.chatgptAccountId ||
       credentials?.providerSpecificData?.accountId;
-    if (typeof accountId === "string" && accountId && !headers["ChatGPT-Account-ID"]) {
-      headers["ChatGPT-Account-ID"] = accountId;
+    if (typeof accountId === "string" && accountId && !headers["ChatGPT-Account-Id"]) {
+      headers["ChatGPT-Account-Id"] = accountId;
+    }
+    // Match OpenCode: add User-Agent header with platform info
+    if (!headers["User-Agent"]) {
+      const os = require("os");
+      const version = "1.0.0"; // TODO: get actual version from package.json
+      headers["User-Agent"] = `opencode/${version} (${os.platform()} ${os.release()}; ${os.arch()})`;
     }
     return headers;
   }
@@ -275,6 +292,20 @@ export class CodexExecutor extends BaseExecutor {
     while (true) {
       const result = await super.execute(args);
       const peek = await this._peekSseTransientError(result.response);
+      
+      // Check if response is a retryable HTTP error (502/503/504) even without SSE pattern match
+      if (!peek.matched && result.response && [HTTP_STATUS.BAD_GATEWAY, HTTP_STATUS.SERVICE_UNAVAILABLE, HTTP_STATUS.GATEWAY_TIMEOUT].includes(result.response.status)) {
+        if (attempt >= attempts) {
+          args.log?.debug?.("RETRY", `CODEX | HTTP ${result.response.status} — retries exhausted (${attempt}/${attempts})`);
+          return result;
+        }
+        attempt++;
+        args.log?.debug?.("RETRY", `CODEX | HTTP ${result.response.status} retry ${attempt}/${attempts} after ${delayMs / 1000}s`);
+        dbg("CODEX", `HTTP ${result.response.status} → retry ${attempt}/${attempts} in ${delayMs}ms`);
+        await new Promise(r => setTimeout(r, delayMs));
+        continue;
+      }
+      
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
         if (peek.replacementBody) {
