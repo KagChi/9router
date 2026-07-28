@@ -416,13 +416,44 @@ async function waitForFirstVisibleLocator(
   return null;
 }
 
+// Human-like jitter helpers. Google's risk engine flags instant fills + zero-
+// delay clicks as bot traffic → triggers CAPTCHA / phone verification. Adding
+// per-keystroke variance and a small pre-submit pause dramatically reduces the
+// challenge rate. ponytail: skipped: full mouse-move choreography, add when
+// verification still triggers on residential-IP accounts.
+function humanDelay(min = 40, max = 90) {
+  return min + Math.floor(Math.random() * (max - min));
+}
+
+async function typeHumanLike(locator, value, { timeout = 15_000 } = {}) {
+  // press-by-press with jitter; Playwright's `type` uses a fixed delay so we
+  // drive the keyboard directly for variance.
+  for (const ch of String(value)) {
+    await locator.press(ch === " " ? "Space" : ch, {
+      delay: humanDelay(25, 65),
+      timeout,
+    });
+  }
+}
+
 async function fillInputResilient(locator, value, { timeout = 15_000 } = {}) {
   if (!locator || value == null) return false;
 
+  // Human-like path first — click to focus, clear, then type with jitter.
   try {
-    await locator.fill(value, { timeout });
+    await locator.click({ timeout: 5_000 });
   } catch {
-    // swallow; verification + fallback below will decide
+    /* noop */
+  }
+  try {
+    await locator.fill("", { timeout: 5_000 });
+  } catch {
+    /* noop */
+  }
+  try {
+    await typeHumanLike(locator, value, { timeout });
+  } catch {
+    // fall through to fallback
   }
 
   let observed = "";
@@ -433,24 +464,12 @@ async function fillInputResilient(locator, value, { timeout = 15_000 } = {}) {
   }
   if (observed === value) return true;
 
-  // Fallback for React/Vue-controlled inputs where .fill() bypasses the
-  // framework's onChange wiring and the value snaps back to empty.
+  // Fallback: framework-controlled inputs that swallow key events — use fill.
   try {
-    await locator.click({ timeout: 5_000 });
-  } catch {
-    /* noop */
-  }
-  try {
-    await locator.fill("");
-  } catch {
-    /* noop */
-  }
-  try {
-    await locator.type(value, { delay: 50, timeout });
+    await locator.fill(value, { timeout });
   } catch {
     return false;
   }
-
   try {
     observed = await locator.inputValue();
   } catch {
@@ -1532,6 +1551,8 @@ export async function runGoogleAccountAutomation({
         "Could not fill the Google email field; will retry in the polling loop",
       );
     } else {
+      // Small human pause between finishing typing and clicking Next.
+      await page.waitForTimeout(humanDelay(250, 500));
       reportStep("submitting_email", "Submitting email");
       await clickFirstVisible(page, NEXT_BUTTON_SELECTORS);
     }
@@ -1632,6 +1653,7 @@ export async function runGoogleAccountAutomation({
       reportStep("entering_email", "Entering Google email");
       const filled = await fillInputResilient(nextEmailInput, email);
       if (filled) {
+        await page.waitForTimeout(humanDelay(250, 500));
         reportStep("submitting_email", "Submitting email");
         await clickFirstVisible(page, NEXT_BUTTON_SELECTORS);
       } else {
@@ -1652,6 +1674,7 @@ export async function runGoogleAccountAutomation({
       reportStep("entering_password", "Entering Google password");
       const filled = await fillInputResilient(passwordInput, password);
       if (filled) {
+        await page.waitForTimeout(humanDelay(300, 600));
         reportStep("submitting_password", "Submitting password");
         await clickFirstVisible(page, NEXT_BUTTON_SELECTORS);
       } else {

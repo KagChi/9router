@@ -326,9 +326,75 @@ export class AutoClawBulkImportManager extends BulkImportManager {
     const autoclawService = this.autoclawServiceFactory({
       proxyUrl: account.resolvedProxyUrl || null,
     });
+    console.log(
+      `[autoclaw-bulk] processAccount email=${account.email} proxy=${account.resolvedProxyUrl || "none"}`,
+    );
+
+    // Retry once when Google triggers CAPTCHA/verification (`needs_manual`).
+    // Camoufox reopens with a fresh fingerprint + new OAuth state, which
+    // often clears the challenge. If it still fails on the retry we fall
+    // through to the manual-followup path.
+    // ponytail: skipped: exponential backoff / IP rotation, add when retry
+    // still hits the challenge on residential proxies.
+    const MAX_LOGIN_ATTEMPTS = 2;
+    let attemptResult = null;
+    for (let attempt = 1; attempt <= MAX_LOGIN_ATTEMPTS; attempt++) {
+      if (job.cancelRequested) {
+        this.finalizeAccount(account, "cancelled", { error: "Job cancelled" });
+        account.password = undefined;
+        return;
+      }
+      const isLastAttempt = attempt === MAX_LOGIN_ATTEMPTS;
+      if (attempt > 1) {
+        this.setAccountStep(
+          account,
+          "retrying_login",
+          `Retrying login after bot verification (attempt ${attempt}/${MAX_LOGIN_ATTEMPTS})`,
+        );
+        await this.persistJobSnapshot(job, { forcePreview: true });
+      }
+      attemptResult = await this._runAutoclawLoginAttempt(
+        job,
+        account,
+        autoclawService,
+        { keepBrowserOnNeedsManual: isLastAttempt },
+      );
+      if (attemptResult.status !== "needs_manual" || isLastAttempt) break;
+      console.log(
+        `[autoclaw-bulk] attempt ${attempt} needs manual (bot verification) — reopening camoufox`,
+      );
+    }
+
+    if (attemptResult?.status === "success") {
+      // Success handled inline in helper; nothing else to do here.
+    } else if (attemptResult?.status === "needs_manual") {
+      // Manual-followup was launched inside the helper (last attempt only).
+    }
+    account.password = undefined;
+    await this.persistJobSnapshot(job, { forcePreview: true });
+  }
+
+  /**
+   * Runs one full AutoClaw login attempt: request oauth URL, start callback
+   * proxy, launch browser, run Google automation, save connection.
+   *
+   * Returns `{ status: "success" | "needs_manual" | "failed" | ... }`. The
+   * caller decides whether to retry on `needs_manual`.
+   *
+   * @param {object} opts
+   * @param {boolean} opts.keepBrowserOnNeedsManual — when true, keeps the
+   *   browser/proxy alive so the user can complete verification manually.
+   *   When false, cleans up and returns so the caller can retry.
+   */
+  async _runAutoclawLoginAttempt(
+    job,
+    account,
+    autoclawService,
+    { keepBrowserOnNeedsManual } = {},
+  ) {
     const deviceId = crypto.randomUUID();
     console.log(
-      `[autoclaw-bulk] processAccount email=${account.email} proxy=${account.resolvedProxyUrl || "none"} deviceId=${deviceId}`,
+      `[autoclaw-bulk] attempt start email=${account.email} deviceId=${deviceId}`,
     );
 
     // Placeholder rejector supaya cancelJob bisa dipanggil kapan saja,
@@ -354,9 +420,7 @@ export class AutoClawBulkImportManager extends BulkImportManager {
         step: "request_oauth_url_failed",
         message: `AutoClaw OAuth URL request failed: ${error.message}`,
       });
-      account.password = undefined;
-      await this.persistJobSnapshot(job, { forcePreview: true });
-      return;
+      return { status: "failed" };
     }
 
     // Step 2: start the real callback proxy on port 18432 + register session.
@@ -389,9 +453,7 @@ export class AutoClawBulkImportManager extends BulkImportManager {
         step: "proxy_start_failed",
         message: error.message,
       });
-      account.password = undefined;
-      await this.persistJobSnapshot(job, { forcePreview: true });
-      return;
+      return { status: "failed" };
     }
     account._autoclawState = state;
 
@@ -417,9 +479,7 @@ export class AutoClawBulkImportManager extends BulkImportManager {
         step: "browser_launch_failed",
         message: `Browser launch failed: ${launchError.message}`,
       });
-      account.password = undefined;
-      await this.persistJobSnapshot(job, { forcePreview: true });
-      return;
+      return { status: "failed" };
     }
 
     account.runtimeSession = { context, page, browser };
@@ -499,6 +559,12 @@ export class AutoClawBulkImportManager extends BulkImportManager {
     // Swallow dangling rejection when automation ends without success.
     successPromise.catch(() => {});
 
+    // Track outcome so we can return it after the finally block cleans up.
+    // needs_manual on a non-last attempt keeps the outcome status so the
+    // outer loop can retry; on the last attempt we launch the manual-followup
+    // and skip the cleanup below (browser stays alive for the user).
+    let outcome = { status: "failed" };
+    let skipCleanup = false;
     try {
       this.setAccountStep(
         account,
@@ -544,29 +610,46 @@ export class AutoClawBulkImportManager extends BulkImportManager {
           step: "connection_saved",
           message: "AutoClaw connection saved successfully",
         });
+        outcome = { status: "success" };
       } else if (automationResult.status === "needs_manual") {
-        account.manualSession = {
-          context,
-          page,
-          browser,
-          opened: false,
-          openedAt: null,
-        };
-        this.setAccountStep(
-          account,
-          "awaiting_manual",
-          "Waiting for manual completion",
-        );
-        this.finalizeAccount(account, "needs_manual", {
-          error: automationResult.error,
-          step: "awaiting_manual",
-          message: automationResult.error,
-        });
-        await this.persistJobSnapshot(job, { forcePreview: true });
+        if (!keepBrowserOnNeedsManual) {
+          // Bot verification on a non-last attempt — signal retry to caller.
+          // The finally block will close browser/proxy so the next attempt
+          // opens a fresh camoufox instance with a new OAuth state.
+          this.setAccountStep(
+            account,
+            "bot_verification_detected",
+            "Bot verification detected — reopening camoufox for retry",
+          );
+          await this.persistJobSnapshot(job, { forcePreview: true });
+          outcome = { status: "needs_manual" };
+        } else {
+          account.manualSession = {
+            context,
+            page,
+            browser,
+            opened: false,
+            openedAt: null,
+          };
+          this.setAccountStep(
+            account,
+            "awaiting_manual",
+            "Waiting for manual completion",
+          );
+          this.finalizeAccount(account, "needs_manual", {
+            error: automationResult.error,
+            step: "awaiting_manual",
+            message: automationResult.error,
+          });
+          await this.persistJobSnapshot(job, { forcePreview: true });
 
-        // Keep proxy alive for manual followup — don't stop it yet.
-        await this.runAutoClawManualFollowup(job, account, successPromise);
-        return;
+          // Keep browser + proxy alive for the manual followup — the finally
+          // block below is skipped so runAutoClawManualFollowup can drive
+          // the same page/context to completion.
+          skipCleanup = true;
+          await this.runAutoClawManualFollowup(job, account, successPromise);
+          outcome = { status: "needs_manual" };
+        }
       } else {
         const terminalStatus = automationResult.status?.startsWith("failed")
           ? automationResult.status
@@ -577,6 +660,7 @@ export class AutoClawBulkImportManager extends BulkImportManager {
           message:
             automationResult.error || "AutoClaw Google automation failed.",
         });
+        outcome = { status: terminalStatus };
       }
     } catch (error) {
       const isCancel = job.cancelRequested;
@@ -589,17 +673,20 @@ export class AutoClawBulkImportManager extends BulkImportManager {
           ? "Job cancelled while processing this account"
           : error.message || "Unexpected AutoClaw bulk failure.",
       });
+      outcome = { status: isCancel ? "cancelled" : "failed" };
     } finally {
-      account.runtimeSession = null;
-      account._rejectTokens = null;
-      account._autoclawState = null;
-      await context.close().catch(() => null);
-      await browser.close().catch(() => null);
-      stopAutoClawProxy();
-      clearAutoClawSession(state);
-      account.password = undefined;
-      await this.persistJobSnapshot(job, { forcePreview: true });
+      if (!skipCleanup) {
+        account.runtimeSession = null;
+        account._rejectTokens = null;
+        account._autoclawState = null;
+        await context.close().catch(() => null);
+        await browser.close().catch(() => null);
+        stopAutoClawProxy();
+        clearAutoClawSession(state);
+        await this.persistJobSnapshot(job, { forcePreview: true });
+      }
     }
+    return outcome;
   }
 
   /**
