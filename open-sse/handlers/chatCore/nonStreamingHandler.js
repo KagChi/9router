@@ -2,7 +2,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
+import { addBufferToUsage, filterUsageForFormat, estimateUsage, hasValidUsage } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -317,9 +317,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   responseBody = decloakToolNames(responseBody, toolNameMap);
 
   const usage = extractUsageFromResponse(responseBody);
-  appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
-  if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+// Fallback: estimate tokens when the provider omits usage (common for some
+  // OpenAI/Anthropic-compatible nodes), so per-key token limits still track.
+  let usageForStats = usage;
+  if (!hasValidUsage(usageForStats)) {
+    const outLen = extractOutputTextLength(responseBody);
+    if (outLen > 0) usageForStats = estimateUsage(body, outLen, sourceFormat);
+  }
+  appendLog({ tokens: usageForStats, status: "200 OK" });
+  saveUsageStats({ provider, model, tokens: usageForStats, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)

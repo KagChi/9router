@@ -38,6 +38,7 @@ export default function APIPageClient({ machineId }) {
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
   const [editLimitKey, setEditLimitKey] = useState(null);
+  const [editLimitName, setEditLimitName] = useState("");
   const [editLimitValue, setEditLimitValue] = useState("");
   const [editLimitWindow, setEditLimitWindow] = useState("monthly");
   const [editLimitRpm, setEditLimitRpm] = useState("");
@@ -739,6 +740,7 @@ export default function APIPageClient({ machineId }) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          name: editLimitName.trim() || editLimitKey.name,
           tokenLimit: Math.max(0, parseInt(editLimitValue, 10) || 0),
           limitWindow: editLimitWindow,
           rpmLimit: Math.max(0, parseInt(editLimitRpm, 10) || 0),
@@ -1377,6 +1379,7 @@ export default function APIPageClient({ machineId }) {
                   <button
                     onClick={() => {
                       setEditLimitKey(key);
+                      setEditLimitName(key.name || "");
                       setEditLimitValue(key.tokenLimit > 0 ? String(key.tokenLimit) : "");
                       setEditLimitWindow(key.limitWindow || "monthly");
                       setEditLimitRpm(key.rpmLimit > 0 ? String(key.rpmLimit) : "");
@@ -1794,10 +1797,16 @@ export default function APIPageClient({ machineId }) {
       {/* Edit Token Limit Modal */}
       <Modal
         isOpen={!!editLimitKey && !showModelSelect}
-        title={`Token Limit${editLimitKey ? ` · ${editLimitKey.name}` : ""}`}
+        title={`Edit API Key${editLimitKey ? ` · ${editLimitKey.name}` : ""}`}
         onClose={() => setEditLimitKey(null)}
       >
         <div className="flex flex-col gap-4">
+          <Input
+            label="Key name"
+            value={editLimitName}
+            onChange={(e) => setEditLimitName(e.target.value)}
+            placeholder="Key name"
+          />
           <Input
             label="Token Limit"
             type="number"
