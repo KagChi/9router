@@ -807,27 +807,50 @@ async function handleCodeBuddyRegionPageViaApi(page, reportStep) {
       if (!looksLikeRegionPage) return null;
 
       try {
-        const response = await fetch(
-          "https://www.codebuddy.ai/console/login/account",
+        // Step 1: fetch userId via /console/accounts.
+        const accountsRes = await fetch(
+          "https://www.codebuddy.ai/console/accounts",
           {
-            method: "POST",
+            method: "GET",
             credentials: "include",
             headers: {
               accept: "application/json, text/plain, */*",
-              "content-type": "application/json",
               "x-requested-with": "XMLHttpRequest",
-              "x-domain": window.location.hostname || "www.codebuddy.ai",
             },
             referrer: "https://www.codebuddy.ai/register/user/complete",
-            body: JSON.stringify({
-              attributes: {
-                countryCode: ["62"],
-                countryFullName: ["Indonesia"],
-                countryName: ["ID"],
-              },
-            }),
           },
         );
+        const accountsJson = await accountsRes.json().catch(() => null);
+        const userId =
+          accountsJson?.data?.accounts?.find((a) => a.lastLogin)?.uid ||
+          accountsJson?.data?.accounts?.[0]?.uid ||
+          null;
+        if (!userId) {
+          return {
+            action: "api_failed",
+            message: `cannot resolve userId from /console/accounts (code=${accountsJson?.code})`,
+          };
+        }
+
+        // Step 2: POST region to Keycloak register endpoint.
+        const registerUrl = `https://www.codebuddy.ai/auth/realms/copilot/overseas/user/register?userId=${encodeURIComponent(userId)}`;
+        const response = await fetch(registerUrl, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            accept: "application/json, text/plain, */*",
+            "content-type": "application/json",
+            "x-requested-with": "XMLHttpRequest",
+          },
+          referrer: "https://www.codebuddy.ai/register/user/complete",
+          body: JSON.stringify({
+            attributes: {
+              countryCode: ["65"],
+              countryFullName: ["Singapore"],
+              countryName: ["SG"],
+            },
+          }),
+        });
 
         const text = await response.text().catch(() => "");
         let data = null;
@@ -844,7 +867,7 @@ async function handleCodeBuddyRegionPageViaApi(page, reportStep) {
             data.code === 200 ||
             typeof data.code === "undefined")
         ) {
-          return { action: "submitted_via_api" };
+          return { action: "submitted_via_api", userId };
         }
 
         return {
@@ -895,23 +918,52 @@ async function handleCodeBuddyRegionPageWithMouse(page, reportStep) {
   if (!isRegionPage) return false;
 
   const optionPatterns = [
-    /indonesia|^id$|\u5370\u5ea6\u5c3c\u897f\u4e9a/i,
     /singapore|^sg$|\u65b0\u52a0\u5761/i,
+    /indonesia|^id$|\u5370\u5ea6\u5c3c\u897f\u4e9a/i,
     /japan|^jp$|\u65e5\u672c/i,
     /thailand|^th$|\u6cf0\u56fd/i,
     /global|international|default/i,
   ];
 
+  // Step 1: try to open the region dropdown (if not already open).
+  await clickFirstVisibleLocatorCenter(page, [
+    ".page-region .t-select",
+    ".page-region [class*='t-select']",
+    ".page-region [role='combobox']",
+    ".page-region input[placeholder]",
+    ".page-region [class*='select']",
+    ".page-region [class*='cursor-pointer']",
+  ]);
+  await page.waitForTimeout(600);
+
+  // Step 2: pick the region option (Singapore first).
+  const selectedOption = await clickVisibleLocatorByText(
+    page,
+    "ul.dropdown-section li, .dropdown-section li, [role='option'], .t-select-option, [class*='option']",
+    optionPatterns,
+  );
+  if (selectedOption) {
+    reportStep(
+      "selecting_codebuddy_region",
+      `Selected CodeBuddy region: ${selectedOption}`,
+    );
+    await page.waitForTimeout(900);
+  }
+
+  // Step 3: submit after region is selected.
   const submitClicked = await clickFirstVisibleLocatorCenter(page, [
     ".page-region [class*='28B894']",
     ".page-region button:has-text('Get started')",
     ".page-region button:has-text('Start')",
     ".page-region button:has-text('Submit')",
     ".page-region button:has-text('Continue')",
+    ".page-region button:has-text('OK')",
+    ".page-region button:has-text('Confirm')",
     ".page-region [role='button']:has-text('Get started')",
     ".page-region [role='button']:has-text('Start')",
     ".page-region [role='button']:has-text('Submit')",
     ".page-region [role='button']:has-text('Continue')",
+    ".page-region [role='button']:has-text('OK')",
   ]);
   if (submitClicked) {
     reportStep(
@@ -922,50 +974,7 @@ async function handleCodeBuddyRegionPageWithMouse(page, reportStep) {
     return true;
   }
 
-  const visibleOption = await clickVisibleLocatorByText(
-    page,
-    "ul.dropdown-section li, .dropdown-section li, [role='option'], .t-select-option, [class*='option']",
-    optionPatterns,
-  );
-  if (visibleOption) {
-    reportStep(
-      "selecting_codebuddy_region",
-      `Selected CodeBuddy region: ${visibleOption}`,
-    );
-    await page.waitForTimeout(900);
-    return true;
-  }
-
-  const opened = await clickFirstVisibleLocatorCenter(page, [
-    ".page-region .t-select",
-    ".page-region [class*='t-select']",
-    ".page-region [role='combobox']",
-    ".page-region input[placeholder]",
-    ".page-region [class*='select']",
-    ".page-region [class*='cursor-pointer']",
-  ]);
-  if (!opened) return false;
-
-  reportStep(
-    "opening_codebuddy_region_selector",
-    "Opening CodeBuddy region selector",
-  );
-  await page.waitForTimeout(600);
-
-  const openedOption = await clickVisibleLocatorByText(
-    page,
-    "ul.dropdown-section li, .dropdown-section li, [role='option'], .t-select-option, [class*='option']",
-    optionPatterns,
-  );
-  if (openedOption) {
-    reportStep(
-      "selecting_codebuddy_region",
-      `Selected CodeBuddy region: ${openedOption}`,
-    );
-    await page.waitForTimeout(900);
-  }
-
-  return true;
+  return Boolean(selectedOption);
 }
 
 async function handleCodeBuddyRegionPage(page, reportStep) {

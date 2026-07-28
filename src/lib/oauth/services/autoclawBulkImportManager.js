@@ -415,11 +415,20 @@ export class AutoClawBulkImportManager extends BulkImportManager {
       oauthUrl = urlResp.oauthUrl;
       state = urlResp.state;
     } catch (error) {
-      this.finalizeAccount(account, "failed", {
-        error: error.message,
-        step: "request_oauth_url_failed",
-        message: `AutoClaw OAuth URL request failed: ${error.message}`,
-      });
+      if (/631002|version.*no longer|not supported/i.test(error.message)) {
+        this.finalizeAccount(account, "failed", {
+          error: error.message,
+          step: "oauth_endpoint_dead",
+          message:
+            "AutoClaw overseasv1/google-oauth-url is disabled (631002). Bulk import blocked until AutoClaw releases updated credentials (APP_ID). Existing accounts can still refresh + proxy.",
+        });
+      } else {
+        this.finalizeAccount(account, "failed", {
+          error: error.message,
+          step: "request_oauth_url_failed",
+          message: `AutoClaw OAuth URL request failed: ${error.message}`,
+        });
+      }
       return { status: "failed" };
     }
 

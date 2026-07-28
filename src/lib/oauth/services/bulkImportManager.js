@@ -883,6 +883,50 @@ export class BulkImportManager {
       await this.persistJobSnapshot(job, { forcePreview: true });
     }
   }
+
+  /**
+   * Retry a specific failed/cancelled worker account. Resets it to "queued",
+   * clears the error, and spawns a fresh worker to pick it up.
+   */
+  async retryWorker(jobId, workerId) {
+    const job = this.jobs.get(jobId);
+    if (!job) return { ok: false, job: null, account: null };
+
+    const wid = Number(workerId);
+    const account = job.accounts.find((a) => a.workerId === wid);
+    if (!account) return { ok: false, job: sanitizeJob(job), account: null };
+
+    // Don't touch running or already successful accounts
+    if (account.status === "running" || account.status === "success") {
+      return {
+        ok: false,
+        job: sanitizeJob(job),
+        account: sanitizeAccount(account),
+      };
+    }
+
+    account.status = "queued";
+    account.error = null;
+    account.runtimeSession = null;
+    account.workerId = null;
+    account.currentStep = "retrying";
+    appendAccountLog(account, "retrying", "Retrying after error");
+
+    const idx = job.accounts.indexOf(account);
+    if (idx >= 0 && idx < job.nextIndex) {
+      job.nextIndex = idx;
+    }
+
+    await this.persistJobSnapshot(job, { forcePreview: true });
+
+    // Spawn a background worker (high workerId to avoid collision)
+    this.runWorker(job, Date.now()).catch(() => {});
+    return {
+      ok: true,
+      job: sanitizeJob(job),
+      account: sanitizeAccount(account),
+    };
+  }
 }
 
 export const __test__ = {

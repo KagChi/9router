@@ -335,7 +335,11 @@ async function refreshOAuthToken(connection) {
 
     // Autoclaw + any provider with a registered REFRESH_HANDLER — delegate
     // to the shared refresh service (handles app-signing headers etc.)
-    const refreshed = await refreshProviderCredentials(provider, connection, console);
+    const refreshed = await refreshProviderCredentials(
+      provider,
+      connection,
+      console,
+    );
     if (refreshed?.accessToken) {
       return {
         accessToken: refreshed.accessToken,
@@ -1198,6 +1202,41 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
+      case "codebuddy": {
+        // Test against the chat completions endpoint with a minimal request.
+        // 401 = invalid key, otherwise the key is accepted.
+        const headers = {
+          Authorization: `Bearer ${connection.apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": "CLI/2.52.0 CodeBuddy/2.52.0",
+          "X-Product": "SaaS",
+          "X-IDE-Type": "CLI",
+          "X-IDE-Name": "CLI",
+          "X-IDE-Version": "2.52.0",
+          "X-Agent-Intent": "craft",
+          "X-Domain": "www.codebuddy.ai",
+          "x-requested-with": "XMLHttpRequest",
+        };
+        const res = await fetchWithConnectionProxy(
+          "https://www.codebuddy.ai/v2/chat/completions",
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              model: "gemini-2.5-flash",
+              messages: [{ role: "user", content: "hi" }],
+              max_tokens: 1,
+              stream: false,
+            }),
+          },
+          effectiveProxy,
+        );
+        if (res.status === 401)
+          return { valid: false, error: "Invalid API key" };
+        return { valid: true, error: null };
+      }
+
       default:
         return { valid: false, error: "Provider test not supported" };
     }

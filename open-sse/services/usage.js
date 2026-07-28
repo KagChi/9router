@@ -5,7 +5,11 @@
 import { getGitHubUsage } from "./usage/github.js";
 import { getGeminiUsage, getAntigravityUsage } from "./usage/google.js";
 import { getClaudeUsage } from "./usage/claude.js";
-import { getCodexUsage, consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "./usage/codex.js";
+import {
+  getCodexUsage,
+  consumeCodexRateLimitResetCredit,
+  getCodexRateLimitResetCredits,
+} from "./usage/codex.js";
 
 export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits };
 import { getKiroUsage } from "./usage/kiro.js";

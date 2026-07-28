@@ -104,6 +104,9 @@ export default function ProvidersPage() {
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
+  // Aggregate balance per provider: { providerId: { remaining, used, total } }
+  // Only populated for providers with usage API (livscene, autoclaw, codebuddy).
+  const [providerBalances, setProviderBalances] = useState({});
   const [testResults, setTestResults] = useState(null);
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
@@ -167,6 +170,80 @@ export default function ProvidersPage() {
     };
     fetchData();
   }, []);
+
+  // Fetch aggregate balance for livscene, autoclaw, codebuddy
+  useEffect(() => {
+    if (loading || connections.length === 0) return;
+    const BALANCE_PROVIDERS = [
+      "livscene",
+      "autoclaw",
+      "codebuddy",
+      "codebuddy-cn",
+      "codebuddy-intl",
+    ];
+    const eligible = connections.filter(
+      (c) => BALANCE_PROVIDERS.includes(c.provider) && c.isActive !== false,
+    );
+    if (eligible.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.allSettled(
+        eligible.map(async (conn) => {
+          try {
+            const res = await fetch(`/api/usage/${conn.id}`);
+            if (!res.ok) return null;
+            const data = await res.json();
+            const quotas = data?.quotas || {};
+            if (conn.provider === "autoclaw") {
+              return {
+                provider: conn.provider,
+                remaining: quotas.Points?.remaining ?? 0,
+              };
+            }
+            if (conn.provider === "livscene") {
+              return {
+                provider: conn.provider,
+                remaining: quotas.Credits?.remaining ?? 0,
+              };
+            }
+            // CodeBuddy: sum all recurring + bonus quotas
+            let totalRemaining = 0;
+            let totalUsed = 0;
+            let totalSize = 0;
+            for (const q of Object.values(quotas)) {
+              if (typeof q.total === "number" && typeof q.used === "number") {
+                totalRemaining += q.total - q.used;
+                totalUsed += q.used;
+                totalSize += q.total;
+              }
+            }
+            return {
+              provider: conn.provider,
+              remaining: totalRemaining,
+              used: totalUsed,
+              total: totalSize,
+            };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      if (cancelled) return;
+      const agg = {};
+      for (const r of results) {
+        if (r.status !== "fulfilled" || !r.value) continue;
+        const { provider, ...bal } = r.value;
+        if (!agg[provider]) agg[provider] = { remaining: 0, used: 0, total: 0 };
+        agg[provider].remaining += bal.remaining ?? 0;
+        agg[provider].used += bal.used ?? 0;
+        agg[provider].total += bal.total ?? 0;
+      }
+      setProviderBalances(agg);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, connections]);
 
   const getProviderStats = (providerId, authType) => {
     const authTypes = Array.isArray(authType) ? authType : [authType];
@@ -568,6 +645,7 @@ export default function ProvidersPage() {
               provider={info}
               stats={getProviderStats(key, "apikey")}
               authType="apikey"
+              balance={providerBalances[key]}
               onToggle={(active) => handleToggleProvider(key, "apikey", active)}
             />
           ))}
@@ -770,6 +848,7 @@ function ApiKeyProviderCard({
   provider,
   stats,
   authType,
+  balance,
   onToggle,
 }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
@@ -857,6 +936,27 @@ function ApiKeyProviderCard({
                     )}
                   </>
                 )}
+                {balance && balance.remaining !== undefined && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+                      balance.remaining > 0
+                        ? "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+                        : "bg-red-500/10 text-red-600 dark:bg-red-500/15 dark:text-red-400"
+                    }`}
+                    title={
+                      balance.total
+                        ? `${balance.used?.toLocaleString()} / ${balance.total.toLocaleString()} used`
+                        : undefined
+                    }
+                  >
+                    <span className="material-symbols-outlined text-[12px]">
+                      toll
+                    </span>
+                    {balance.total
+                      ? `${balance.remaining.toLocaleString()} / ${balance.total.toLocaleString()}`
+                      : balance.remaining.toLocaleString()}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -900,6 +1000,11 @@ ApiKeyProviderCard.propTypes = {
     errorCode: PropTypes.string,
     errorTime: PropTypes.string,
   }).isRequired,
+  balance: PropTypes.shape({
+    remaining: PropTypes.number,
+    used: PropTypes.number,
+    total: PropTypes.number,
+  }),
   authType: PropTypes.string,
   onToggle: PropTypes.func,
 };

@@ -6,12 +6,8 @@ import {
   getApiKeyRpmLimit,
   updateProviderConnection,
   getSettings,
-  getProxyPools,
 } from "@/lib/localDb";
-import {
-  resolveConnectionProxyConfig,
-  pickProxyPoolId,
-} from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import {
   formatRetryAfter,
   checkFallbackError,
@@ -74,15 +70,8 @@ export async function getProviderCredentials(
     if (FREE_PROVIDERS[providerId]?.noAuth) {
       const settings = await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
-      const strategy = override.rotateStrategy || "none";
-      let pickedId = override.proxyPoolId || null;
-      if (strategy !== "none") {
-        const allPools = await getProxyPools({ isActive: true });
-        const poolIds = allPools.filter((p) => p.proxyUrl).map((p) => p.id);
-        pickedId = pickProxyPoolId(poolIds, strategy, providerId);
-      }
       const resolvedProxy = await resolveConnectionProxyConfig({
-        proxyPoolId: pickedId || "",
+        proxyPoolId: override.proxyPoolId || "",
       });
       return {
         id: "noauth",
@@ -346,39 +335,32 @@ export async function markAccountUnavailable(
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
-  // Terminal quota/credit states — cooldown won't help until user tops up
-  // or renews. Disable connection permanently so rotation skips it.
-  // Includes CodeBuddy 14018, generic credits exhausted, and Grok free-usage
-  // (subscription:free-usage-exhausted / "used all the included free usage").
+  // Credits exhausted (CodeBuddy 14018, or generic "credits exhausted" text)
+  // is a terminal state — cooldown won't help, credits won't refill until user
+  // tops up. Disable connection permanently so rotation skips it.
   const errStr = typeof errorText === "string" ? errorText.toLowerCase() : "";
   const isCreditsExhausted =
-    /credits?\s*exhausted|insufficient\s*(credits?|points?)|out\s*of\s*(credits?|points?)|"code"\s*:\s*14018|积分不足|请充值|余额不足|free-usage-exhausted|used all the included free usage|free usage (?:limit |quota )?exhausted|subscription:free-usage/i.test(
+    /credits?\s*exhausted|insufficient\s*(credits?|points?)|out\s*of\s*(credits?|points?)|"code"\s*:\s*14018|积分不足|请充值|余额不足/i.test(
       errStr,
     );
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
-    testStatus: "unavailable",
+    testStatus: isCreditsExhausted ? "credits_exhausted" : "unavailable",
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel,
+    ...(isCreditsExhausted ? { isActive: false } : {}),
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName =
     conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  if (isCreditsExhausted) {
-    log.warn(
-      "AUTH",
-      `${connName} disabled (credits/free-usage exhausted) [${status}]`,
-    );
-  } else {
-    log.warn(
-      "AUTH",
-      `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`,
-    );
-  }
+  log.warn(
+    "AUTH",
+    `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`,
+  );
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);

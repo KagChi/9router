@@ -68,8 +68,10 @@ export default function ProviderDetailPage() {
   const providerId = params.id;
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
-  // AutoClaw wallet balances keyed by connection.id — fetched inline per row.
-  const [autoclawBalances, setAutoclawBalances] = useState({});
+  // AutoClaw/Livscene/CodeBuddy balances keyed by connection.id.
+  // For AutoClaw/Livscene: just remaining (number).
+  // For CodeBuddy: { remaining, used, total } object.
+  const [inlineBalances, setInlineBalances] = useState({});
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -553,11 +555,13 @@ export default function ProviderDetailPage() {
     return () => { cancelled = true; };
   }, [providerId, connections]);
 
-  // AutoClaw/Livscene: fetch balance per connection so we can render it inline
+  // AutoClaw/Livscene/CodeBuddy: fetch balance per connection so we can render it inline
   // next to each connection row. Refreshed on mount.
   useEffect(() => {
     if (
-      !["autoclaw", "livscene"].includes(providerId) ||
+      !["autoclaw", "livscene", "codebuddy", "codebuddy-cn"].includes(
+        providerId,
+      ) ||
       connections.length === 0
     )
       return;
@@ -570,16 +574,41 @@ export default function ProviderDetailPage() {
             if (!res.ok) return [conn.id, null];
             const data = await res.json();
             const quotas = data?.quotas || {};
-            const key = providerId === "autoclaw" ? "Points" : "Credits";
-            const remaining = quotas[key]?.remaining;
-            return [conn.id, typeof remaining === "number" ? remaining : null];
+            let remaining = null;
+            if (providerId === "autoclaw") {
+              remaining = quotas["Points"]?.remaining;
+            } else if (providerId === "livscene") {
+              remaining = quotas["Credits"]?.remaining;
+            } else {
+              // CodeBuddy: show first quota as used/total (prefer recurring)
+              const keys = Object.keys(quotas);
+              const key = keys.find((k) => quotas[k]?.recurring) || keys[0];
+              if (key) {
+                const q = quotas[key];
+                remaining =
+                  typeof q.total === "number" && typeof q.used === "number"
+                    ? {
+                        remaining: q.total - q.used,
+                        used: q.used,
+                        total: q.total,
+                      }
+                    : null;
+              }
+              // Fallback: API returned a message but no quota package (e.g.
+              // "No credit package found" for freshly signed CodeBuddy accts).
+              // Surface the message inline instead of showing "—".
+              if (!remaining && data?.message) {
+                remaining = { message: data.message };
+              }
+            }
+            return [conn.id, remaining];
           } catch {
             return [conn.id, null];
           }
         }),
       );
       if (!cancelled) {
-        setAutoclawBalances(Object.fromEntries(entries));
+        setInlineBalances(Object.fromEntries(entries));
       }
     })();
     return () => {
@@ -1178,8 +1207,10 @@ export default function ProviderDetailPage() {
               isFirst={index === 0}
               isLast={index === connections.length - 1}
               balance={
-                ["autoclaw", "livscene"].includes(providerId)
-                  ? autoclawBalances[conn.id]
+                ["autoclaw", "livscene", "codebuddy", "codebuddy-cn"].includes(
+                  providerId,
+                )
+                  ? inlineBalances[conn.id]
                   : undefined
               }
               onMoveUp={() => handleSwapPriority(index, index - 1)}
@@ -1829,6 +1860,24 @@ export default function ProviderDetailPage() {
                     </Button>
                   )}
                 </>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="upload"
+                onClick={() => importFileRef.current?.click()}
+              >
+                Import
+              </Button>
+              {connections.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="download"
+                  onClick={handleExportConnections}
+                >
+                  Export
+                </Button>
               )}
               {/* Thinking config */}
               {/* {thinkingConfig && (
