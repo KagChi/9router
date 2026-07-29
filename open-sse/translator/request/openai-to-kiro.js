@@ -139,14 +139,32 @@ function convertMessages(messages, model) {
         const toolResultBlocks = msg.content.filter(c => c.type === CLAUDE_BLOCK.TOOL_RESULT);
         if (toolResultBlocks.length > 0) {
           toolResultBlocks.forEach(block => {
-            const text = Array.isArray(block.content)
-              ? block.content.map(c => c.text || "").join("\n")
-              : (typeof block.content === "string" ? block.content : "");
+            let text = "";
+            
+            if (Array.isArray(block.content)) {
+              for (const c of block.content) {
+                if (c.type === CLAUDE_BLOCK.TEXT || c.text) {
+                  text += (c.text || "") + "\n";
+                } else if (c.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64") {
+                  // Forward tool-result images to pendingImages
+                  const mediaType = c.source.media_type || DEFAULT_IMAGE_MIME;
+                  const format = mediaType.split("/")[1] || mediaType;
+                  pendingImages.push({ format, source: { bytes: c.source.data } });
+                }
+              }
+            } else if (typeof block.content === "string") {
+              text = block.content;
+            }
 
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
+<<<<<<< HEAD
               status: block.is_error ? "error" : "success",
               content: [{ text: text }]
+=======
+              status: "success",
+              content: [{ text: text.trim() }]
+>>>>>>> 94eba639 (fix(kiro): restore image input support on all paths (MITM + /v1))
             });
           });
         }

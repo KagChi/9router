@@ -97,18 +97,31 @@ function convertClaudeMessagesToKiro(messages, model) {
             if (typeof block.content === "string") {
               resultContent = block.content;
             } else if (Array.isArray(block.content)) {
-              resultContent =
-                block.content
-                  .filter((c) => c.type === CLAUDE_BLOCK.TEXT)
-                  .map((c) => c.text)
-                  .join("\n") || JSON.stringify(block.content);
+              for (const c of block.content) {
+                if (c.type === CLAUDE_BLOCK.TEXT) {
+                  resultContent += c.text + "\n";
+                } else if (c.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64") {
+                  // Forward tool-result images to pendingImages
+                  const mediaType = c.source.media_type || DEFAULT_IMAGE_MIME;
+                  const format = mediaType.split("/")[1] || mediaType;
+                  pendingImages.push({ format, source: { bytes: c.source.data } });
+                }
+              }
+              if (!resultContent.trim()) {
+                resultContent = JSON.stringify(block.content);
+              }
             } else if (block.content) {
               resultContent = JSON.stringify(block.content);
             }
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
+<<<<<<< HEAD
               status: block.is_error ? "error" : "success",
               content: [{ text: resultContent }],
+=======
+              status: "success",
+              content: [{ text: resultContent.trim() }],
+>>>>>>> 94eba639 (fix(kiro): restore image input support on all paths (MITM + /v1))
             });
           }
         }

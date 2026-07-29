@@ -199,6 +199,7 @@ function safeArgsString(value) {
  *   - plain text content  → { role:"user", content }
  *   - toolResults only    → one { role:"tool", tool_call_id, content } per result
  *   - both                → tool messages first, then the user text message
+ *   - images              → multimodal content with image_url blocks
  */
 function convertUserInputMessage(uim) {
   const out = [];
@@ -214,9 +215,22 @@ function convertUserInputMessage(uim) {
     });
   }
 
-  // Emit user text only if it exists alongside OR when there are no tool results
+  // Build user message with text + images
   const text = (uim.content || "").trim();
-  if (text || toolResults.length === 0) {
+  const images = uim.images || [];
+
+  if (images.length > 0) {
+    // Multimodal: content as array with text + images
+    const content = [];
+    if (text) content.push({ type: "text", text });
+    for (const img of images) {
+      const mime = `image/${img.format || "png"}`;
+      const dataUri = `data:${mime};base64,${img.source.bytes}`;
+      content.push({ type: "image_url", image_url: { url: dataUri } });
+    }
+    out.push({ role: "user", content });
+  } else if (text || toolResults.length === 0) {
+    // Text-only
     out.push({ role: "user", content: text });
   }
 
