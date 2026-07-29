@@ -207,6 +207,7 @@ function safeArgsString(value) {
  *   - plain text content  → { role:"user", content }
  *   - toolResults only    → one { role:"tool", tool_call_id, content } per result
  *   - both                → tool messages first, then the user text message
+ *   - images              → multimodal content with image_url blocks
  */
 function convertUserInputMessage(uim) {
   const out = [];
