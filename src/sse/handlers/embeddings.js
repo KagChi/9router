@@ -11,6 +11,7 @@ import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { getExecutor } from "open-sse/executors/index.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
@@ -128,7 +129,7 @@ export async function handleEmbeddings(request) {
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const refreshedCredentials = await checkAndRefreshToken(provider, credentials, getExecutor(provider));
 
     const result = await handleEmbeddingsCore({
       body: { ...body, model: `${provider}/${model}` },
