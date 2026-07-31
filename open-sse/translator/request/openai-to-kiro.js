@@ -158,13 +158,6 @@ function convertMessages(messages, model) {
 
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
-<<<<<<< HEAD
-              status: block.is_error ? "error" : "success",
-              content: [{ text: text }]
-=======
-              status: "success",
-              content: [{ text: text.trim() }]
->>>>>>> 94eba639 (fix(kiro): restore image input support on all paths (MITM + /v1))
             });
           });
         }

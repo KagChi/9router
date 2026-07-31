@@ -115,13 +115,6 @@ function convertClaudeMessagesToKiro(messages, model) {
             }
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
-<<<<<<< HEAD
-              status: block.is_error ? "error" : "success",
-              content: [{ text: resultContent }],
-=======
-              status: "success",
-              content: [{ text: resultContent.trim() }],
->>>>>>> 94eba639 (fix(kiro): restore image input support on all paths (MITM + /v1))
             });
           }
         }
