@@ -108,7 +108,7 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     refreshable: true,
   },
-    cursor: { tokenExists: true },
+  cursor: { tokenExists: true },
   kilocode: {
     url: `${KILOCODE_CONFIG.apiBaseUrl}/api/profile`,
     method: "GET",
