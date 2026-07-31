@@ -95,9 +95,8 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     refreshable: false,
   },
-kimi: { checkExpiry: true, refreshable: true },
+  kimi: { checkExpiry: true, refreshable: true },
   "kimi-coding": { checkExpiry: true, refreshable: true },
-,
   autoclaw: {
     // AutoClaw uses JWT access_token (24h TTL) + refresh_token (30d TTL).
     // Test by hitting the user info endpoint. refreshable = true.
@@ -107,7 +106,7 @@ kimi: { checkExpiry: true, refreshable: true },
     authPrefix: "Bearer ",
     refreshable: true,
   },
-    cursor: { tokenExists: true },
+  cursor: { tokenExists: true },
   kilocode: {
     url: `${KILOCODE_CONFIG.apiBaseUrl}/api/profile`,
     method: "GET",
