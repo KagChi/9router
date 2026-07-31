@@ -180,6 +180,22 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
         ...newCredentials.providerSpecificData,
       };
     }
+    // Mirror refreshToken into providerSpecificData.refreshToken so
+    // providers that only keep a PSD copy can still refresh after
+    // migration or re-serialisation. Only apply when we have a PSD base
+    // to merge into — otherwise a bare { refreshToken } would erase
+    // email, userId, authMethod, etc. on write.
+    if (newCredentials.refreshToken) {
+      const psdBase =
+        updates.providerSpecificData ||
+        newCredentials.existingProviderSpecificData;
+      if (psdBase) {
+        updates.providerSpecificData = {
+          ...psdBase,
+          refreshToken: newCredentials.refreshToken,
+        };
+      }
+    }
     if (newCredentials.copilotToken || newCredentials.copilotTokenExpiresAt) {
       updates.providerSpecificData = {
         ...(updates.providerSpecificData || newCredentials.existingProviderSpecificData || {}),
@@ -210,6 +226,10 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  * Check whether the provider token (and, for GitHub, the Copilot token) is
  * about to expire and refresh it proactively.
  *
+ * Uses the executor's needsRefresh when available so that provider-specific
+ * heuristics (e.g. Grok CLI's createdAt fallback) are respected even when
+ * expiresAt is missing from the stored credentials.
+ *
  * @param {string} provider
  * @param {object} credentials
  * @param {{ force?: boolean }} [options]  force=true skips the on-request lead check
@@ -237,6 +257,10 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
       lastRefreshAt: creds.lastRefreshAt || null,
     });
 
+    // Always use the generic refresh provider rather than delegating to the
+    // executor.  The generic layer has withCredentialRefreshLock dedup,
+    // mergeRefreshedCredentials for field preservation, and the PSD
+    // refreshToken bridge in refreshTokenByProvider.
     const newCreds = await _refreshProviderCredentials(provider, creds, log);
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
       const mergedCreds = {

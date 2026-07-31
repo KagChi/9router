@@ -249,11 +249,14 @@ export class DefaultExecutor extends BaseExecutor {
       iflow: () => this.refreshIflow(credentials.refreshToken, proxyOptions),
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
+      xai: () => this.refreshFromGrant(credentials, proxyOptions),
       cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       clinepass: () =>
         this.refreshCline(credentials.refreshToken, proxyOptions),
       "codebuddy-cn": () =>
         this.refreshCodebuddy(credentials.refreshToken, proxyOptions),
+      "codebuddy-intl": () =>
+        this.refreshCodebuddyIntl(credentials.refreshToken, proxyOptions),
       codebuddy: () =>
         this.refreshCodebuddyIntl(credentials.refreshToken, proxyOptions),
       kimi: () => this.refreshKimi(credentials, proxyOptions),

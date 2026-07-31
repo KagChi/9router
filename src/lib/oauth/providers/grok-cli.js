@@ -99,9 +99,13 @@ const grokCli = {
       ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
       : null;
 
+    // Mirror identity into providerSpecificData so GrokCliExecutor can set
+    // x-email / x-userid without depending on top-level credential shape.
+    const rt = tokens.refresh_token || null;
+
     return {
       accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token || null,
+      refreshToken: rt,
       expiresIn: tokens.expires_in,
       // Surface an absolute expiry so the proactive refresh path
       // (shouldRefreshCredentials / checkAndRefreshToken) can refresh the
@@ -113,11 +117,10 @@ const grokCli = {
       // Top-level for dashboard connection cards
       email: email || undefined,
       displayName: displayName || undefined,
-      // Mirror identity into providerSpecificData so GrokCliExecutor can set
-      // x-email / x-userid without depending on top-level credential shape.
       providerSpecificData: {
         authMethod: "device_code",
         idToken: tokens.id_token || null,
+        refreshToken: rt,
         email: email || null,
         userId,
         hasGrokCodeAccess: extra?.user?.hasGrokCodeAccess ?? null,

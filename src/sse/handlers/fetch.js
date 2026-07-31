@@ -14,6 +14,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import { getExecutor } from "open-sse/executors/index.js";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 
 /**
@@ -191,7 +192,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
     log.info("AUTH", `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`);
 
-    const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
+    const refreshedCredentials = await checkAndRefreshToken(providerId, credentials, getExecutor(providerId));
 
     const result = await handleFetchCore({
       url: targetUrl,
