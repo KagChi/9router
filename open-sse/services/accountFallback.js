@@ -45,7 +45,12 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
-  // Default: transient cooldown for any unmatched error
+  // Unmatched 400/422 = deterministic client error, don't fallback
+  if (status === 400 || status === 422) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
+  // Default: transient cooldown for any other unmatched error
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
