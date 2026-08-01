@@ -4,6 +4,7 @@ import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
+import { XAI_TOKEN_LIFETIME_SECONDS } from "../../config/grokCli.js";
 
 let _xaiServiceSingleton = null;
 export async function refreshXaiToken(refreshToken, log) {
@@ -15,10 +16,12 @@ export async function refreshXaiToken(refreshToken, log) {
         _xaiServiceSingleton = new mod.XaiService();
       }
       const tokens = await _xaiServiceSingleton.refreshAccessToken(refreshToken);
+      // xAI OAuth claims expires_in: 21600 (6h), but tokens actually expire after
+      // 40-45 minutes. Override with empirically correct lifetime (issue #2546).
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || refreshToken,
-        expiresIn: tokens.expires_in,
+        expiresIn: XAI_TOKEN_LIFETIME_SECONDS,
         idToken: tokens.id_token,
       };
     } catch (e) {

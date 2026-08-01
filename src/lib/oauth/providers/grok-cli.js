@@ -1,5 +1,6 @@
 import { GROK_CLI_CONFIG } from "../constants/oauth.js";
 import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "../providerHelpers.js";
+import { XAI_TOKEN_LIFETIME_SECONDS } from "../../../open-sse/config/grokCli.js";
 
 // Grok CLI / Grok Build — device code flow to auth.x.ai, inference on cli-chat-proxy.grok.com
 const grokCli = {
@@ -95,9 +96,11 @@ const grokCli = {
       .join(" ")
       .trim() || null;
 
-    const expiresAt = tokens.expires_in
-      ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-      : null;
+    // xAI OAuth claims expires_in: 21600 (6h), but tokens actually expire after
+    // 40-45 minutes. Use the empirically correct lifetime so proactive refresh
+    // fires before the token dies (issue #2546).
+    const expiresIn = XAI_TOKEN_LIFETIME_SECONDS;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
 
     // Mirror identity into providerSpecificData so GrokCliExecutor can set
     // x-email / x-userid without depending on top-level credential shape.
@@ -106,7 +109,7 @@ const grokCli = {
     return {
       accessToken: tokens.access_token,
       refreshToken: rt,
-      expiresIn: tokens.expires_in,
+      expiresIn,
       // Surface an absolute expiry so the proactive refresh path
       // (shouldRefreshCredentials / checkAndRefreshToken) can refresh the
       // xAI token before it silently expires ~40-45 min after login.
