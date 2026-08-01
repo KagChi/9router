@@ -1,7 +1,7 @@
 /**
  * CodeBuddy (international) usage handler
  *
- * Mirrors codebuddy-cn but scoped to the "codebuddy" provider (international edition).
+ * Mirrors codebuddy-cn but scoped to the "codebuddy-intl" provider (international edition).
  * Quota lives behind the same billing endpoint shape (POST, payload wrapped twice
  * under data.Response.Data). It mixes two credit types that must NOT be merged:
  *
@@ -14,7 +14,7 @@ import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { U, parseResetTime } from "./shared.js";
 
-const PROVIDER_ID = "codebuddy";
+const PROVIDER_ID = "codebuddy-intl";
 
 function num(precise, plain) {
   const n = Number(precise ?? plain);

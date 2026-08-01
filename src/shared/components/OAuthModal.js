@@ -297,7 +297,6 @@ export default function OAuthModal({
         "kilocode",
         "codebuddy-cn",
         "codebuddy-intl",
-        "codebuddy",
         "qoder",
         "qoder-cn",
         "grok-cli",

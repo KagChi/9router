@@ -31,7 +31,7 @@ export default function CodeBuddyBulkPage() {
 
       <BulkAccountAutomationModal
         asPage
-        provider="codebuddy"
+        provider="codebuddy-intl"
         title="CodeBuddy Bulk Google Auto Login"
         serviceName="CodeBuddy"
         onSuccess={() => router.refresh()}

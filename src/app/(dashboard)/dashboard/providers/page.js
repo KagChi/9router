@@ -179,7 +179,6 @@ export default function ProvidersPage() {
     const BALANCE_PROVIDERS = [
       "livscene",
       "autoclaw",
-      "codebuddy",
       "codebuddy-cn",
       "codebuddy-intl",
     ];
