@@ -35,7 +35,7 @@ describe("xai/token-refresh wrapper", () => {
           return {
             access_token: "new-access",
             refresh_token: `${refreshToken}-rotated`,
-            expires_in: 900,
+            expires_in: 21600, // xAI claims 6 hours (bogus)
             id_token: "id-token",
           };
         }
@@ -49,10 +49,12 @@ describe("xai/token-refresh wrapper", () => {
       null
     );
 
+    // Fix for issue #2546: expiresIn is overridden to 2700 (45 min) instead of
+    // the bogus 21600 (6h) that xAI claims, so tokens refresh before expiry.
     expect(out).toEqual({
       accessToken: "new-access",
       refreshToken: "old-refresh-rotated",
-      expiresIn: 900,
+      expiresIn: 2700, // Corrected to 45 min, not xAI's bogus 21600
       idToken: "id-token",
     });
     expect(out).not.toHaveProperty("expiresAt");

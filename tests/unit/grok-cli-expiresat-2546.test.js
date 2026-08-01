@@ -54,4 +54,14 @@ describe("Grok CLI (xAI) token expiry propagation (#2546)", () => {
     };
     expect(shouldRefreshCredentials("grok-cli", creds)).toBe(false);
   });
+
+  it("XAI_TOKEN_LIFETIME_SECONDS is set to 45 minutes (2700 seconds) to override bogus 6h claim", async () => {
+    const { XAI_TOKEN_LIFETIME_SECONDS } = await import(
+      "../../open-sse/config/grokCli.js"
+    );
+    // xAI claims 6 hours (21600s) but tokens expire in 40-45 min
+    // We use 45 min (2700s) so refresh fires at 40 min (45 - 5 min lead)
+    expect(XAI_TOKEN_LIFETIME_SECONDS).toBe(2700);
+    expect(XAI_TOKEN_LIFETIME_SECONDS).not.toBe(21600);
+  });
 });
