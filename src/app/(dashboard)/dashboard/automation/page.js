@@ -229,7 +229,7 @@ function CodeBuddyIntlAutomationPanel({ providerInfo, onRefresh }) {
       </div>
       <OAuthModal
         isOpen={isOAuthOpen}
-        provider="codebuddy"
+        provider="codebuddy-intl"
         providerInfo={providerInfo}
         onSuccess={() => {
           onRefresh?.();
@@ -276,7 +276,7 @@ const AUTOMATION_PROVIDERS = [
     component: CodeBuddyAutomationPanel,
   },
   {
-    id: "codebuddy",
+    id: "codebuddy-intl",
     label: "CodeBuddy",
     icon: "smart_toy",
     description:

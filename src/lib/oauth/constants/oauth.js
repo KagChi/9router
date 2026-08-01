@@ -236,7 +236,6 @@ export const PROVIDERS = {
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy-cn",
   CODEBUDDY_INTL: "codebuddy-intl",
-  CODEBUDDY_AI: "codebuddy",
 
   KIMCHI: "kimchi",
   AUTOCLOW: "autoclaw",

@@ -1,8 +1,10 @@
-// CodeBuddy international (codebuddy.ai) — mirrors codebuddy-cn registry shape,
-// swapping the Tencent CN domain for the .ai endpoint set. All OAuth/plugin URLs
-// use the /v2/plugin prefix with platform=ide (CN uses platform=CLI).
+// CodeBuddy international (codebuddy.ai) — sibling of codebuddy-cn (China).
+// Global edition uses www.codebuddy.ai as base; CN uses copilot.tencent.com.
+// All OAuth/plugin URLs use the /v2/plugin prefix with platform=ide (CN uses platform=CLI).
 export default {
   id: "codebuddy-intl",
+  // Short model prefix (cbai). "cbai" = CodeBuddy AI (international);
+  // the full id "codebuddy-intl" still resolves.
   alias: "cbai",
   uiAlias: "cbai",
   hidden: false,
@@ -13,7 +15,7 @@ export default {
     color: "#006EFF",
     website: "https://www.codebuddy.ai",
     notice: {
-      signupUrl: "https://www.codebuddy.ai",
+      signupUrl: "https://www.codebuddy.ai/profile/keys",
     },
   },
   category: "oauth",
@@ -43,23 +45,26 @@ export default {
       url: "https://www.codebuddy.ai/v2/billing/meter/get-user-resource",
     },
   },
-  // Same model lineup exposed by the CN gateway — intl backend is the same catalog.
+  // International catalog (differs from the CN lineup in codebuddy-cn.js).
   models: [
-    { id: "glm-5.2", name: "GLM-5.2" },
-    { id: "glm-5.1", name: "GLM-5.1" },
-    { id: "glm-5.0", name: "GLM-5.0" },
-    { id: "glm-5.0-turbo", name: "GLM-5.0-Turbo" },
-    { id: "glm-5v-turbo", name: "GLM-5v-Turbo" },
-    { id: "glm-4.7", name: "GLM-4.7" },
-    { id: "minimax-m3", name: "MiniMax-M3" },
-    { id: "minimax-m2.7", name: "MiniMax-M2.7" },
-    { id: "kimi-k2.7", name: "Kimi-K2.7-Code" },
-    { id: "kimi-k2.6", name: "Kimi-K2.6" },
-    { id: "kimi-k2.5", name: "Kimi-K2.5" },
-    { id: "hy3-preview", name: "Hy3 Preview" },
-    { id: "deepseek-v4-pro", name: "DeepSeek-V4-Pro" },
-    { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" },
-    { id: "deepseek-v3-2-volc", name: "DeepSeek-V3.2" },
+    { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro" },
+    { id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite" },
+    { id: "gemini-3.0-flash", name: "Gemini 3.0 Flash" },
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "gpt-5.5", name: "GPT-5.5" },
+    { id: "gpt-5.4", name: "GPT-5.4" },
+    { id: "gpt-5.2", name: "GPT-5.2" },
+    { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
+    { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
+    { id: "gpt-5.1", name: "GPT-5.1" },
+    { id: "gpt-5.1-codex", name: "GPT-5.1 Codex" },
+    { id: "gpt-5.1-codex-max", name: "GPT-5.1 Codex Max" },
+    { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
+    { id: "deepseek-v3-2-volc", name: "DeepSeek V3.2" },
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "claude-opus-4.7-1m", name: "Claude Opus 4.7 (1M)" },
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
   ],
   oauth: {
     baseUrl: "https://www.codebuddy.ai",

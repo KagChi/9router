@@ -1,7 +1,7 @@
 /**
  * CodeBuddy CN usage handler
  *
- * Scoped to the "codebuddy-cn" provider specifically — a future "codebuddy-intl"
+ * Scoped to the "codebuddy-cn" provider specifically — the "codebuddy-intl"
  * variant would get its own handler/endpoint, so keep this CN-only.
  *
  * Quota lives behind a Tencent billing endpoint (POST, payload wrapped twice

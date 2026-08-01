@@ -1201,7 +1201,7 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
-      case "codebuddy": {
+      case "codebuddy-intl": {
         // Test against the chat completions endpoint with a minimal request.
         // 401 = invalid key, otherwise the key is accepted.
         const headers = {

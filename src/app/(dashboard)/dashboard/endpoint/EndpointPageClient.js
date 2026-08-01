@@ -1522,7 +1522,7 @@ export default function APIPageClient({ machineId }) {
           <h3 className="text-sm font-semibold">Model Aliases</h3>
           <p className="text-xs text-text-muted mt-0.5">
             Define a custom name that maps to a real model. The alias can be used in the API
-            (e.g. <code className="bg-surface-2 px-1 rounded">codebuddy/claude-opus-4.7-1m</code> → <code className="bg-surface-2 px-1 rounded">cc/claude-opus-4.7</code>).
+            (e.g. <code className="bg-surface-2 px-1 rounded">cbai/claude-opus-4.7-1m</code> → <code className="bg-surface-2 px-1 rounded">cc/claude-opus-4.7</code>).
             Aliases are global and work for every key.
           </p>
         </div>
@@ -1531,7 +1531,7 @@ export default function APIPageClient({ machineId }) {
             label="Alias name"
             value={customModelName}
             onChange={(e) => setCustomModelName(e.target.value)}
-            placeholder="e.g. codebuddy/claude-opus-4.7-1m"
+            placeholder="e.g. cbai/claude-opus-4.7-1m"
           />
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-text-main">Maps to</label>

@@ -257,8 +257,6 @@ export class DefaultExecutor extends BaseExecutor {
         this.refreshCodebuddy(credentials.refreshToken, proxyOptions),
       "codebuddy-intl": () =>
         this.refreshCodebuddyIntl(credentials.refreshToken, proxyOptions),
-      codebuddy: () =>
-        this.refreshCodebuddyIntl(credentials.refreshToken, proxyOptions),
       kimi: () => this.refreshKimi(credentials, proxyOptions),
       "kimi-coding": () => this.refreshKimi(credentials, proxyOptions),
       kilocode: () =>
