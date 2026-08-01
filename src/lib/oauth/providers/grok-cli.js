@@ -1,6 +1,6 @@
 import { GROK_CLI_CONFIG } from "../constants/oauth.js";
 import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "../providerHelpers.js";
-import { XAI_TOKEN_LIFETIME_SECONDS } from "../../../open-sse/config/grokCli.js";
+import { XAI_TOKEN_LIFETIME_SECONDS } from "../../../../open-sse/config/grokCli.js";
 
 // Grok CLI / Grok Build — device code flow to auth.x.ai, inference on cli-chat-proxy.grok.com
 const grokCli = {
