@@ -5,6 +5,7 @@
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { U } from "./shared.js";
 import { PROVIDER_OAUTH } from "../../providers/index.js";
+import { resolveQoderPatCredential } from "../../shared/qoder/patToken.js";
 import crypto from "crypto";
 
 export { getGlmUsage } from "./glm.js";
@@ -201,23 +202,53 @@ export async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
   }
 }
 
-export async function getQoderUsage(accessToken, proxyOptions = null) {
-  if (!accessToken) {
-    return { message: "Qoder usage unavailable: no access token" };
+/**
+ * Qoder usage — GET /api/v2/quota/usage on openapi.qoder.sh.
+ *
+ * Dual auth (single provider id `qoder`):
+ *   - apiKey present → Personal Access Token (pt-...). PATs can't call the
+ *     quota API directly; exchange for a short-lived job token (jt-...) via
+ *     /api/v1/jobToken/exchange first (shared cache with the chat executor).
+ *   - else accessToken → OAuth device token (dt-...) used as Bearer directly.
+ */
+export async function getQoderUsage(accessToken, proxyOptions = null, apiKey = null) {
+  const hasApiKey = typeof apiKey === "string" && apiKey.trim().length > 0;
+  const hasAccessToken =
+    typeof accessToken === "string" && accessToken.trim().length > 0;
+
+  if (!hasApiKey && !hasAccessToken) {
+    return { message: "Qoder access token or API key not available." };
   }
+
+  // Resolve the Bearer token for the quota endpoint.
+  let bearerToken = accessToken;
+  if (hasApiKey) {
+    try {
+      const resolved = await resolveQoderPatCredential(apiKey, proxyOptions);
+      bearerToken = resolved.accessToken;
+    } catch (error) {
+      return {
+        message: `Qoder connected. Personal Access Token exchange failed: ${error.message}`,
+      };
+    }
+  }
+
   try {
     const response = await proxyAwareFetch(
       U("qoder").url,
       {
         method: "GET",
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${bearerToken}`,
           Accept: "application/json",
         },
       },
       proxyOptions,
     );
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "Qoder API key invalid or expired." };
+      }
       return {
         message: `Qoder connected. Usage fetch returned ${response.status}.`,
       };
