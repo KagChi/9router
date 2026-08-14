@@ -95,7 +95,7 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     refreshable: false,
   },
-  kimi: { checkExpiry: true, refreshable: true },
+kimi: { checkExpiry: true, refreshable: true },
   "kimi-coding": { checkExpiry: true, refreshable: true },
   autoclaw: {
     // AutoClaw uses JWT access_token (24h TTL) + refresh_token (30d TTL).
