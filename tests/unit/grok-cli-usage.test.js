@@ -150,6 +150,7 @@ describe("parseGrokCliBilling", () => {
     });
     expect(percentageOnly.quotas["Monthly included"].remainingPercentage).toBeCloseTo(57.5);
   });
+});
 
 function accessTokenWithTier(tier) {
   const payload = Buffer.from(JSON.stringify({ tier })).toString("base64url");
