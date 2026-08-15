@@ -11,7 +11,7 @@ import {
   checkApiKeyRpm,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getProviderConnections } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -19,7 +19,7 @@ import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
-import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
+import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy, getCapacityAdapterModels, getHardCapabilities, modelMeetsCapabilities } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -27,6 +27,56 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { getExecutor } from "open-sse/executors/index.js";
+
+/**
+ * Keep only pool models whose provider has at least one active connection.
+ * Pool models are resolved via getModelInfo so aliases and custom provider-node
+ * prefixes (e.g. "hfr/...") map to their real provider id before the check.
+ * Unresolvable models are kept (preserve prior behavior); resolvable ones with
+ * no active connection are dropped — they would only 404 and waste a slot.
+ */
+async function filterPoolByActiveCredentials(poolModels) {
+  const connections = await getProviderConnections({ isActive: true });
+  const activeProviders = new Set((connections || []).map((c) => c.provider));
+  const usable = [];
+  for (const m of poolModels) {
+    let provider = null;
+    try {
+      const info = await getModelInfo(m);
+      provider = info?.provider || null;
+    } catch { /* keep on resolution failure */ }
+    if (!provider || activeProviders.has(provider)) usable.push(m);
+  }
+  return usable;
+}
+
+/**
+ * Build the shared adapter options for augmentModelsWithCapacityAdapter:
+ * the hard capabilities required by the request, and the adapter pool filtered
+ * to providers with active credentials. Cheap passthrough when no hard
+ * capability is required or the pool is disabled/empty.
+ */
+async function buildCapacityAdapterOpts(requiredCapabilities, settings) {
+  const hard = getHardCapabilities(requiredCapabilities);
+  if (hard.length === 0) return { hard, opts: {}, poolSize: 0 };
+  const pool = getCapacityAdapterModels(settings);
+  if (pool.length === 0) return { hard, opts: {}, poolSize: 0 };
+  const usable = await filterPoolByActiveCredentials(pool);
+  return { hard, opts: { poolOverride: usable }, poolSize: pool.length };
+}
+
+/**
+ * Warn when the adapter SHOULD have engaged (target can't handle the request's
+ * media) but couldn't because every configured pool model lacks active
+ * credentials. Points at the dashboard instead of silently stripping media.
+ */
+function logAdapterStarvedIfNeeded(label, checkModels, capacityAdapter) {
+  const { hard, opts, poolSize } = capacityAdapter;
+  if (hard.length === 0 || poolSize === 0) return;
+  if (!Array.isArray(opts.poolOverride) || opts.poolOverride.length > 0) return;
+  if (checkModels.some((m) => modelMeetsCapabilities(m, hard))) return;
+  log.warn("CHAT", `Capacity adapter for [${hard.join(",")}] on "${label}": pool models have no active credentials — media will be stripped. Configure in Dashboard → Combos → Vision Adapter`);
+}
 
 /**
  * Handle chat completion request
@@ -124,6 +174,10 @@ export async function handleChat(request, clientRawRequest = null) {
 
   const requiredCapabilities = detectRequiredCapabilities(body);
 
+  // Credential-filter the capacity-adapter pool once per request (only does work
+  // when the request needs a hard capability, e.g. has an image).
+  const capacityAdapter = await buildCapacityAdapterOpts(requiredCapabilities, settings);
+
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
@@ -131,7 +185,8 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
-    const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings);
+    const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings, capacityAdapter.opts);
+    logAdapterStarvedIfNeeded(modelStr, comboModels, capacityAdapter);
     const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
 
     if (comboStrategy === "fusion") {
@@ -172,7 +227,14 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Single model request — may still switch to a capacity-adapter model if the
   // target lacks a capability the request needs (e.g. no vision, request has an image).
-  const soloAugmented = augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings);
+  // Capability-check the RESOLVED provider/model, not the raw client string, so
+  // aliases and custom node prefixes are judged by what they actually route to.
+  let checkModels;
+  try {
+    const info = await getModelInfo(modelStr);
+    if (info?.provider) checkModels = [`${info.provider}/${info.model}`];
+  } catch { /* keep raw-string capability check */ }
+  const soloAugmented = augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings, { ...capacityAdapter.opts, checkModels });
   if (soloAugmented.length > 1) {
     const adapterAdded = soloAugmented.filter((m) => m !== modelStr);
     log.info("CHAT", `Capacity adapter for [${[...requiredCapabilities].join(",")}] on "${modelStr}" → trying ${soloAugmented.join(", ")}`);
@@ -189,6 +251,7 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
+  logAdapterStarvedIfNeeded(modelStr, checkModels || [modelStr], capacityAdapter);
   return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
 }
 
@@ -208,7 +271,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
       const requiredCapabilities = detectRequiredCapabilities(body);
-      const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, chatSettings);
+      const capacityAdapter = await buildCapacityAdapterOpts(requiredCapabilities, chatSettings);
+      const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, chatSettings, capacityAdapter.opts);
+      logAdapterStarvedIfNeeded(modelStr, comboModels, capacityAdapter);
       const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
 
       if (comboStrategy === "fusion") {

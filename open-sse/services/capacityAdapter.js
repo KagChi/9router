@@ -75,7 +75,15 @@ export function getActiveAdapterStrategy(requiredCapabilities, settings) {
   return "fallback";
 }
 
-function modelSatisfies(modelStr, requiredHard) {
+// Extract the hard (input-modality) capabilities from a required-capabilities Set.
+export function getHardCapabilities(requiredCapabilities) {
+  return [...(requiredCapabilities || [])].filter((c) => HARD_CAPS.has(c));
+}
+
+// Does a "provider/model" string satisfy all required hard capabilities?
+// Exported so callers can check a RESOLVED provider/model pair (alias/prefix
+// resolved upstream) rather than the raw client-supplied model string.
+export function modelMeetsCapabilities(modelStr, requiredHard) {
   const slash = modelStr.indexOf("/");
   const provider = slash > 0 ? modelStr.slice(0, slash) : "";
   const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
@@ -89,12 +97,19 @@ function modelSatisfies(modelStr, requiredHard) {
 // original models follow as fallback. Leaves `models` untouched when the
 // original list already covers it (combo.js's reorderByCapabilities handles
 // that case via autoSwitch).
-export function augmentModelsWithCapacityAdapter(models, requiredCapabilities, settings) {
-  const hard = [...(requiredCapabilities || [])].filter((c) => HARD_CAPS.has(c));
+//
+// opts.checkModels — parallel array used ONLY for the satisfy check (e.g. the
+//   resolved "provider/model" of an alias/custom-prefix client string).
+// opts.poolOverride — pre-filtered pool (e.g. credential-filtered by the
+//   caller); replaces the settings-derived pool when provided.
+export function augmentModelsWithCapacityAdapter(models, requiredCapabilities, settings, opts = {}) {
+  const hard = getHardCapabilities(requiredCapabilities);
   if (hard.length === 0 || !Array.isArray(models) || models.length === 0) return models;
-  if (models.some((m) => modelSatisfies(m, hard))) return models;
+  const checkList = Array.isArray(opts.checkModels) && opts.checkModels.length > 0 ? opts.checkModels : models;
+  if (checkList.some((m) => modelMeetsCapabilities(m, hard))) return models;
 
-  const pool = getCapacityAdapterModels(settings).filter((m) => !models.includes(m) && modelSatisfies(m, hard));
+  const poolSource = Array.isArray(opts.poolOverride) ? opts.poolOverride : getCapacityAdapterModels(settings);
+  const pool = poolSource.filter((m) => !models.includes(m) && modelMeetsCapabilities(m, hard));
   if (pool.length === 0) return models;
   return [...pool, ...models];
 }
