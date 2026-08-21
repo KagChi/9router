@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-ARG BUN_IMAGE=oven/bun:canary-alpine
+ARG BUN_IMAGE=oven/bun:1.4.0-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /app
 
