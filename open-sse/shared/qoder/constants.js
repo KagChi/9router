@@ -166,6 +166,7 @@ export const QODER_MODEL_MAP = {
   gfmodel: "gfmodel",
   kmodel: "kmodel",
   mmodel: "mmodel",
+  cmodel: "cmodel",
 };
 
 // RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
