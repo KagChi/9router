@@ -37,6 +37,95 @@ import {
   QODER_MODEL_MAP,
 } from "../shared/qoder/constants.js";
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
+import { QODER_QUEUE_MAX_RETRIES, QODER_QUEUE_RETRY_AFTER_SECONDS_CAP, QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT } from "../shared/qoder/constants.js";
+
+/**
+ * Parse nested JSON structure to detect and extract retry information from queue throttle errors.
+ * 
+ * Handles Qoder's double-JSON format:
+ * - envelope.body = '{"statusCodeValue":403,"body":"{\"code\":\"403\",\"message\":\"{\\\"code\\\":\\\"10605\\\",...}"}"}'
+ * 
+ * Returns { retryAfterSeconds: number } if code 10605 detected, null otherwise.
+ */
+function parseQueueThrottle(inner) {
+  if (!inner || typeof inner !== "string") return null;
+  
+  const lowerInner = inner.toLowerCase();
+  
+  // Check for code 10605 anywhere in the message text
+  if (!lowerInner.includes('"code"') || !lowerInner.includes('10605')) {
+    return null;
+  }
+  
+  try {
+    // First attempt: try parsing as top-level JSON object with code field
+    let parsed;
+    try {
+      parsed = JSON.parse(inner);
+    } catch {
+      // Try extracting inner message object
+      // Pattern: {"code":"10605",...} or nested {"message":"{\"code\":\"10605\",...}"}}
+      const regex = /"code"\s*:\s*"10605"/i;
+      if (!regex.test(inner)) return null;
+      
+      // Attempt to find retryAfterSeconds from raw string using regex
+      // Handle both single and double escaped JSON
+      const retryMatch = inner.match(/"retryAfterSeconds"\s*:\s*(\d+)/);
+      if (retryMatch) {
+        return { retryAfterSeconds: parseInt(retryMatch[1], 10) };
+      }
+      return { retryAfterSeconds: QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT };
+    }
+    
+    // Direct code 10605 match
+    if (parsed.code === "10605") {
+      if (typeof parsed.retryAfterSeconds === "number") {
+        return { retryAfterSeconds: parsed.retryAfterSeconds };
+      }
+      if (typeof parsed.message === "object" && parsed.message.retryAfterSeconds) {
+        return { retryAfterSeconds: parsed.message.retryAfterSeconds };
+      }
+      return { retryAfterSeconds: QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT };
+    }
+    
+    // Nested structure: {"code":"403","message":"{\"code\":\"10605\",...}"}
+    if (typeof parsed.message === "string") {
+      try {
+        const nested = JSON.parse(parsed.message);
+        if (nested.code === "10605") {
+          if (typeof nested.retryAfterSeconds === "number") {
+            return { retryAfterSeconds: nested.retryAfterSeconds };
+          }
+          if (typeof nested.message === "object" && nested.message.retryAfterSeconds) {
+            return { retryAfterSeconds: nested.message.retryAfterSeconds };
+          }
+          return { retryAfterSeconds: QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT };
+        }
+      } catch {}
+    }
+    
+    // Double-nested: {"message":{"value":"{\"code\":\"10605\",...}"}}
+    if (typeof parsed.message === "object" && typeof parsed.message.value === "string") {
+      try {
+        const deepNested = JSON.parse(parsed.message.value);
+        if (deepNested.code === "10605") {
+          if (typeof deepNested.retryAfterSeconds === "number") {
+            return { retryAfterSeconds: deepNested.retryAfterSeconds };
+          }
+          return { retryAfterSeconds: QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT };
+        }
+      } catch {}
+    }
+  } catch (err) {
+    // If all parsing attempts fail, fall back to regex matching
+    const retryMatch = inner.match(/"retryAfterSeconds"\s*:\s*(\d+)/);
+    if (retryMatch) {
+      return { retryAfterSeconds: parseInt(retryMatch[1], 10) };
+    }
+  }
+  
+  return null;
+}
 
 /**
  * Hoist role:"system" messages out of the messages array (Qoder rejects
@@ -217,26 +306,27 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
 
 /**
  * Check if a qoder error message indicates a billing/quota block.
- * Signatures: code 112 (quota exhausted), code 10605 (queue throttle), pricingUrl field.
+ * Signatures: code 112 (quota exhausted), pricingUrl field.
+ * Queue throttle (code 10605) is handled separately via parseQueueThrottle + retry.
  */
 function isBillingBlock(inner) {
   if (!inner || typeof inner !== "string") return false;
   const lowerMsg = inner.toLowerCase();
-  // Match: {"code":"112",...}, {"code":"10605",...}, or pricingUrl field
-  return /\"code\"\s*:\s*\"(112|10605)\"/.test(inner) || lowerMsg.includes("pricingurl");
+  // Match: {"code":"112",...} or pricingUrl field
+  return /\"code\"\s*:\s*\"112\"/.test(inner) || lowerMsg.includes("pricingurl");
 }
 
 /**
- * Peek the first SSE frame to detect billing errors before piping.
- * Returns { isBilling, statusVal, message, consumed } — `consumed` is every
- * byte read so far (including the peeked line) so the caller can re-process
- * it and nothing is dropped from the stream.
+ * Peek the first SSE frame to detect billing/queue errors before piping.
+ * Returns { kind: "ok"|"billing"|"queue_throttle", consumed, ... } — `consumed`
+ * is every byte read so far (including the peeked line) so the caller can
+ * re-process it and nothing is dropped from the stream.
  */
 async function peekFirstQoderFrame(reader, decoder) {
   let consumed = "";
   while (true) {
     const { done, value } = await reader.read();
-    if (done) return { isBilling: false, consumed, upstreamDone: true };
+    if (done) return { kind: "ok", consumed, upstreamDone: true };
 
     consumed += decoder.decode(value, { stream: true });
     const nl = consumed.indexOf("\n");
@@ -246,19 +336,42 @@ async function peekFirstQoderFrame(reader, decoder) {
     if (!line.startsWith("data:")) continue;
 
     const data = line.slice(5).trimStart();
-    if (data === "[DONE]") return { isBilling: false, consumed };
+    if (data === "[DONE]") return { kind: "ok", consumed };
 
     let envelope;
-    try { envelope = JSON.parse(data); } catch { return { isBilling: false, consumed }; }
+    try { envelope = JSON.parse(data); } catch { return { kind: "ok", consumed }; }
 
     const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
     const inner = typeof envelope.body === "string" ? envelope.body : "";
 
-    if (statusVal !== 200 && isBillingBlock(inner)) {
-      return { isBilling: true, statusVal, message: inner || `qoder billing block (${statusVal})` };
+    if (statusVal !== 200) {
+      const queue = parseQueueThrottle(inner);
+      if (queue) {
+        return { kind: "queue_throttle", statusVal, retryAfterSeconds: queue.retryAfterSeconds, message: inner, consumed };
+      }
+      if (isBillingBlock(inner)) {
+        return { kind: "billing", statusVal, message: inner || `qoder billing block (${statusVal})`, consumed };
+      }
     }
-    return { isBilling: false, consumed };
+    return { kind: "ok", consumed };
   }
+}
+
+/**
+ * Sleep for ms milliseconds, but resolve early if signal is aborted.
+ */
+function sleepMs(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    let timer;
+    const cleanup = () => {
+      clearTimeout(timer);
+      try { signal?.removeEventListener?.("abort", onAbort); } catch {}
+    };
+    const onAbort = () => { cleanup(); resolve(); };
+    timer = setTimeout(() => { cleanup(); resolve(); }, ms);
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
 }
 
 /**
@@ -276,126 +389,301 @@ async function peekFirstQoderFrame(reader, decoder) {
  * response.text() which hangs until the socket closes — so on terminal
  * events we cancel the upstream reader and close our stream immediately.
  *
- * NEW: Peek first frame to detect billing blocks (code 112/10605/pricingUrl).
- * If detected, return 403 response so chatCore marks connection unavailable
- * and triggers combo fallback instead of leaking error text into chat.
+ * Billing blocks (code 112/pricingUrl) detected on the first frame return a
+ * 403 response so chatCore marks the connection unavailable.
+ *
+ * Queue throttle (code 10605) triggers a retry: the upstream reader is
+ * cancelled, we wait for retryAfterSeconds (capped), then re-fetch via the
+ * opt.refetch callback. Retries happen up to maxQueueRetries times, only if
+ * no content has been emitted to the client yet.
  */
-async function wrapQoderSSE(response, model) {
+async function wrapQoderSSE(response, model, opts = {}) {
+  const {
+    refetch = null,
+    maxQueueRetries = QODER_QUEUE_MAX_RETRIES,
+    retryCapSeconds = QODER_QUEUE_RETRY_AFTER_SECONDS_CAP,
+    signal = null,
+    log = null,
+  } = opts;
+
   if (!response.ok || !response.body) return response;
 
-  const decoder = new TextDecoder();
-  const reader = response.body.getReader();
+  let currentResponse = response;
+  let reader = currentResponse.body.getReader();
+  let decoder = new TextDecoder();
+  let retriesLeft = maxQueueRetries;
+  let queueRetryCount = 0;
+  let peek = null;
 
-  // Peek first frame to detect billing block
-  const peek = await peekFirstQoderFrame(reader, decoder);
-  if (peek?.isBilling) {
-    // Billing block detected — return 403 so chatCore fails this connection
-    await reader.cancel().catch(() => {});
-    return new Response(
-      JSON.stringify({ error: { message: peek.message, code: peek.statusVal } }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
-    );
+  // ---- First-frame retry loop (billing / queue_throttle / ok) ----
+  while (true) {
+    peek = await peekFirstQoderFrame(reader, decoder);
+
+    if (peek.kind === "billing") {
+      await reader.cancel().catch(() => {});
+      return new Response(
+        JSON.stringify({ error: { message: peek.message, code: peek.statusVal } }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (peek.kind === "queue_throttle") {
+      await reader.cancel().catch(() => {});
+      if (!refetch || retriesLeft <= 0 || signal?.aborted) {
+        // Exhausted → terminal 403 (same as billing)
+        return new Response(
+          JSON.stringify({ error: { message: peek.message, code: peek.statusVal } }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const waitSeconds = Math.min(
+        Math.max(1, Number(peek.retryAfterSeconds) || QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT),
+        retryCapSeconds,
+      );
+      queueRetryCount++;
+      retriesLeft--;
+      log?.warn?.("QODER", `queue throttle (10605) — retry ${queueRetryCount}/${maxQueueRetries + 1} after ${waitSeconds}s`);
+      await sleepMs(waitSeconds * 1000, signal);
+      if (signal?.aborted) {
+        return new Response(
+          JSON.stringify({ error: { message: "qoder queue retry aborted", code: 499 } }),
+          { status: 499, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      try {
+        const next = await refetch();
+        if (!next || !next.ok || !next.body) {
+          log?.warn?.("QODER", `queue retry refetch failed (status ${next?.status || "?"})`);
+          return new Response(
+            JSON.stringify({ error: { message: peek.message, code: peek.statusVal } }),
+            { status: 403, headers: { "Content-Type": "application/json" } }
+          );
+        }
+        currentResponse = next;
+      } catch (err) {
+        log?.warn?.("QODER", `queue retry refetch threw: ${err.message}`);
+        return new Response(
+          JSON.stringify({ error: { message: peek.message, code: peek.statusVal } }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      reader = currentResponse.body.getReader();
+      decoder = new TextDecoder();
+      continue;
+    }
+
+    // kind === "ok" → proceed to stream
+    break;
   }
 
-  // Normal flow: re-process every byte the peek consumed, then continue.
+  // ---- Build the output ReadableStream ----
   let buffer = peek.consumed || "";
-  const upstreamDrained = peek.upstreamDone === true;
+  let upstreamDrained = peek.upstreamDone === true;
   const encoder = new TextEncoder();
   let doneEmitted = false;
-
-  // Process one already-extracted SSE line (no trailing newline).
-  const processLine = (line, controller) => {
-    const trimmed = line.replace(/\r$/, "").trim();
-    if (!trimmed) return;
-    if (!trimmed.startsWith("data:")) return;
-    if (doneEmitted) return;
-
-    const data = trimmed.slice(5).trimStart();
-    if (data === "[DONE]") {
-      controller.enqueue(encoder.encode(SSE_DONE));
-      doneEmitted = true;
-      return;
-    }
-
-    let envelope;
-    try { envelope = JSON.parse(data); } catch { return; }
-    const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
-    const inner = typeof envelope.body === "string" ? envelope.body : "";
-    if (statusVal !== 200) {
-      const msg = inner || `upstream status ${statusVal}`;
-      const errChunk = JSON.stringify({
-        id: `qoder-error-${Date.now()}`,
-        object: "chat.completion.chunk",
-        created: Math.floor(Date.now() / 1000),
-        model,
-        choices: [{ index: 0, delta: { content: `\n[qoder error ${statusVal}: ${truncate(msg, 200)}]` }, finish_reason: "stop" }],
-      });
-      controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`));
-      controller.enqueue(encoder.encode(SSE_DONE));
-      doneEmitted = true;
-      return;
-    }
-    if (!inner) return;
-    if (inner === "[DONE]") {
-      controller.enqueue(encoder.encode(SSE_DONE));
-      doneEmitted = true;
-      return;
-    }
-    // Strip embedded newlines so the SSE frame stays a single event.
-    const sanitized = inner.replace(/\r?\n/g, "");
-    controller.enqueue(encoder.encode(`data: ${sanitized}\n\n`));
-  };
+  let contentEmitted = false;
+  let lastErrorInfo = null; // { statusVal, inner } for terminal fallback
 
   const stream = new ReadableStream({
-    // Use start()+loop (not pull): a pull that buffers a partial line without
-    // enqueueing would never be re-invoked, hanging consumers like .text().
     async start(controller) {
-      try {
-        // Drain whatever the peek already pulled off the socket first.
-        let nlSeed;
-        while ((nlSeed = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, nlSeed);
-          buffer = buffer.slice(nlSeed + 1);
-          processLine(line, controller);
-          if (doneEmitted) {
-            await reader.cancel().catch(() => {});
-            controller.close();
-            return;
-          }
-        }
-        if (upstreamDrained) {
-          // Peek hit end-of-stream: flush any trailing partial line.
-          buffer += decoder.decode();
-          if (buffer.length > 0) {
-            processLine(buffer, controller);
-            buffer = "";
-          }
+      /**
+       * Process one SSE line. Returns:
+       *   "skip"    — nothing to forward
+       *   "content" — a non-error chunk was forwarded
+       *   "queue"   — queue throttle detected (the caller should retry)
+       *   "done"    — terminal frame emitted ([DONE] or error chunk)
+       */
+      const processLine = (line) => {
+        const trimmed = line.replace(/\r$/, "").trim();
+        if (!trimmed) return "skip";
+        if (!trimmed.startsWith("data:")) return "skip";
+        if (doneEmitted) return "skip";
+
+        const data = trimmed.slice(5).trimStart();
+        if (data === "[DONE]") {
+          controller.enqueue(encoder.encode(SSE_DONE));
+          doneEmitted = true;
+          return "done";
         }
 
-        while (!doneEmitted && !upstreamDrained) {
-          const { done, value } = await reader.read();
+        let envelope;
+        try { envelope = JSON.parse(data); } catch { return "skip"; }
+        const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
+        const inner = typeof envelope.body === "string" ? envelope.body : "";
+
+        if (statusVal !== 200) {
+          lastErrorInfo = { statusVal, inner };
+          const queue = parseQueueThrottle(inner);
+          if (queue && !contentEmitted) {
+            return "queue";
+          }
+          // Terminal error: emit synthetic error chunk
+          const msg = inner || `upstream status ${statusVal}`;
+          const errChunk = JSON.stringify({
+            id: `qoder-error-${Date.now()}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model,
+            choices: [{ index: 0, delta: { content: `\n[qoder error ${statusVal}: ${truncate(msg, 200)}]` }, finish_reason: "stop" }],
+          });
+          try { controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`)); } catch {}
+          try { controller.enqueue(encoder.encode(SSE_DONE)); } catch {}
+          doneEmitted = true;
+          return "done";
+        }
+
+        if (!inner) return "skip";
+        if (inner === "[DONE]") {
+          controller.enqueue(encoder.encode(SSE_DONE));
+          doneEmitted = true;
+          return "done";
+        }
+
+        // Strip embedded newlines so the SSE frame stays a single event.
+        const sanitized = inner.replace(/\r?\n/g, "");
+        controller.enqueue(encoder.encode(`data: ${sanitized}\n\n`));
+        contentEmitted = true;
+        return "content";
+      };
+
+      /** Drain buffered lines; returns processLine result or "more" if buffer is empty. */
+      const drainBuffer = () => {
+        let nl;
+        while ((nl = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, nl);
+          buffer = buffer.slice(nl + 1);
+          const res = processLine(line);
+          if (res === "queue" || res === "done") return res;
+        }
+        return "more";
+      };
+
+      /**
+       * Read from the current reader until queue-throttle / terminal / EOF.
+       * Returns "queue" | "done" | "eof".
+       */
+      const drainCurrent = async () => {
+        let res = drainBuffer();
+        if (res !== "more") return res;
+
+        if (upstreamDrained) {
+          buffer += decoder.decode();
+          if (buffer.length > 0) {
+            res = processLine(buffer);
+            buffer = "";
+            if (res === "queue" || res === "done") return res;
+          }
+          return "eof";
+        }
+
+        while (!doneEmitted) {
+          let value, done;
+          try {
+            ({ done, value } = await reader.read());
+          } catch {
+            return "eof";
+          }
           if (done) {
             buffer += decoder.decode();
             if (buffer.length > 0) {
-              processLine(buffer, controller);
+              res = processLine(buffer);
               buffer = "";
+              if (res === "queue" || res === "done") return res;
+            }
+            return "eof";
+          }
+          buffer += decoder.decode(value, { stream: true });
+          res = drainBuffer();
+          if (res === "queue" || res === "done") return res;
+        }
+        return "done";
+      };
+
+      try {
+        let status = await drainCurrent();
+
+        // Mid-stream queue-throttle retry loop
+        while (status === "queue") {
+          if (!refetch || retriesLeft <= 0 || signal?.aborted) {
+            // Exhausted — emit terminal error chunk
+            if (lastErrorInfo) {
+              const { statusVal, inner } = lastErrorInfo;
+              const msg = inner || `upstream status ${statusVal}`;
+              const errChunk = JSON.stringify({
+                id: `qoder-error-${Date.now()}`,
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model,
+                choices: [{ index: 0, delta: { content: `\n[qoder error ${statusVal}: ${truncate(msg, 200)}]` }, finish_reason: "stop" }],
+              });
+              try { controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`)); } catch {}
+              try { controller.enqueue(encoder.encode(SSE_DONE)); } catch {}
+              doneEmitted = true;
             }
             break;
           }
 
-          buffer += decoder.decode(value, { stream: true });
-          let nl;
-          while ((nl = buffer.indexOf("\n")) !== -1) {
-            const line = buffer.slice(0, nl);
-            buffer = buffer.slice(nl + 1);
-            processLine(line, controller);
-            if (doneEmitted) {
-              // Terminal frame received — drop upstream keepalive and end.
-              await reader.cancel().catch(() => {});
-              controller.close();
-              return;
+          // Cancel old reader, wait, refetch, swap
+          await reader.cancel().catch(() => {});
+          const waitSeconds = Math.min(
+            Math.max(1, lastErrorInfo?.inner ? (parseQueueThrottle(lastErrorInfo.inner)?.retryAfterSeconds || QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT) : QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT),
+            retryCapSeconds,
+          );
+          queueRetryCount++;
+          retriesLeft--;
+          log?.warn?.("QODER", `queue throttle (10605) mid-stream — retry ${queueRetryCount}/${maxQueueRetries + 1} after ${waitSeconds}s`);
+          await sleepMs(waitSeconds * 1000, signal);
+          if (signal?.aborted) break;
+
+          try {
+            const next = await refetch();
+            if (!next || !next.ok || !next.body) {
+              log?.warn?.("QODER", `queue retry refetch failed (status ${next?.status || "?"})`);
+              // Emit terminal error
+              if (lastErrorInfo) {
+                const { statusVal, inner } = lastErrorInfo;
+                const msg = inner || `upstream status ${statusVal}`;
+                const errChunk = JSON.stringify({
+                  id: `qoder-error-${Date.now()}`,
+                  object: "chat.completion.chunk",
+                  created: Math.floor(Date.now() / 1000),
+                  model,
+                  choices: [{ index: 0, delta: { content: `\n[qoder error ${statusVal}: ${truncate(msg, 200)}]` }, finish_reason: "stop" }],
+                });
+                try { controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`)); } catch {}
+                try { controller.enqueue(encoder.encode(SSE_DONE)); } catch {}
+                doneEmitted = true;
+              }
+              break;
             }
+            currentResponse = next;
+          } catch (err) {
+            log?.warn?.("QODER", `queue retry refetch threw: ${err.message}`);
+            if (lastErrorInfo) {
+              const { statusVal, inner } = lastErrorInfo;
+              const msg = inner || `upstream status ${statusVal}`;
+              const errChunk = JSON.stringify({
+                id: `qoder-error-${Date.now()}`,
+                object: "chat.completion.chunk",
+                created: Math.floor(Date.now() / 1000),
+                model,
+                choices: [{ index: 0, delta: { content: `\n[qoder error ${statusVal}: ${truncate(msg, 200)}]` }, finish_reason: "stop" }],
+              });
+              try { controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`)); } catch {}
+              try { controller.enqueue(encoder.encode(SSE_DONE)); } catch {}
+              doneEmitted = true;
+            }
+            break;
           }
+
+          // Swap reader/decoder and reset for the new response
+          reader = currentResponse.body.getReader();
+          decoder = new TextDecoder();
+          buffer = "";
+          upstreamDrained = false;
+          lastErrorInfo = null;
+
+          status = await drainCurrent();
         }
       } catch {
         // fall through to terminal [DONE] + close
@@ -416,8 +704,8 @@ async function wrapQoderSSE(response, model) {
   });
 
   return new Response(stream, {
-    status: response.status,
-    statusText: response.statusText,
+    status: currentResponse.status,
+    statusText: currentResponse.statusText,
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -500,9 +788,9 @@ export class QoderExecutor extends BaseExecutor {
     const encodedBodyStr = qoderEncodeBody(plainBody);
     const encodedBodyBuf = Buffer.from(encodedBodyStr, "latin1");
 
-    let cosyHeaders;
-    try {
-      cosyHeaders = buildCosyHeaders(
+    // Helper: build COSY headers (may throw on bad credentials)
+    const buildCosy = () => {
+      return buildCosyHeaders(
         encodedBodyBuf,
         url,
         {
@@ -513,52 +801,83 @@ export class QoderExecutor extends BaseExecutor {
           machineId: psd.machineId || "",
         },
       );
-    } catch (err) {
-      // cosy.js throws synchronously on missing userId/authToken — surface
-      // as 401 so chatCore prompts re-auth instead of returning a 500.
+    };
+
+    // Helper: single fetch attempt (called once initially and on retries)
+    // Returns { response, headers } or { error: err }.
+    const doFetch = async () => {
+      let cosyHeaders;
+      try {
+        cosyHeaders = buildCosy();
+      } catch (err) {
+        return { error: err };
+      }
+
+      const modelSource = (payload.model_config && payload.model_config.source) || "system";
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        "Cache-Control": "no-cache",
+        "X-Model-Key": qoderKey,
+        "X-Model-Source": modelSource,
+        // gzip triggers signature validation on Qoder's CDN; force identity.
+        "Accept-Encoding": "identity",
+        ...cosyHeaders,
+      };
+
+      // Abort if upstream doesn't return response headers within connect timeout.
+      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      const connectCtrl = new AbortController();
+      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
+      const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
+
+      try {
+        const response = await proxyAwareFetch(
+          url,
+          { method: "POST", headers, body: encodedBodyBuf, signal: mergedSignal },
+          proxyOptions,
+        );
+        clearTimeout(connectTimer);
+        return { response, headers };
+      } catch (err) {
+        clearTimeout(connectTimer);
+        return { error: err };
+      }
+    };
+
+    // ---- Initial fetch (with PAT exchange/cosy guards already applied) ----
+    const initialResult = await doFetch();
+    if (initialResult.error) {
+      // Signing failure
       const fakeResp = new Response(
-        JSON.stringify({ error: { message: `qoder cosy signing failed: ${err.message}` } }),
+        JSON.stringify({ error: { message: `qoder cosy signing failed: ${initialResult.error.message}` } }),
         { status: 401, headers: { "Content-Type": "application/json" } },
       );
       return { response: fakeResp, url, headers: {}, transformedBody: body };
     }
+    const { response: initResponse, headers: initHeaders } = initialResult;
 
-    const modelSource = (payload.model_config && payload.model_config.source) || "system";
-    const headers = {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-      "Cache-Control": "no-cache",
-      "X-Model-Key": qoderKey,
-      "X-Model-Source": modelSource,
-      // gzip triggers signature validation on Qoder's CDN; force identity.
-      "Accept-Encoding": "identity",
-      ...cosyHeaders,
+    if (!initResponse.ok) {
+      // Non-ok HTTP response — pass through unchanged
+      return { response: initResponse, url, headers: initHeaders, transformedBody: payload };
+    }
+
+    // ---- First-frame / mid-stream queue throttle retry enabled via refetch ----
+    const refetch = async () => {
+      const result = await doFetch();
+      if (result.error) return null;
+      return result.response;
     };
 
-    // Abort if upstream doesn't return response headers within connect timeout.
-    const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
-    const connectCtrl = new AbortController();
-    const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
-    const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
+    const wrapped = await wrapQoderSSE(initResponse, `qoder/${qoderKey}`, {
+      refetch,
+      maxQueueRetries: QODER_QUEUE_MAX_RETRIES,
+      retryCapSeconds: QODER_QUEUE_RETRY_AFTER_SECONDS_CAP,
+      signal,
+      log,
+    });
 
-    let response;
-    try {
-      response = await proxyAwareFetch(
-        url,
-        { method: "POST", headers, body: encodedBodyBuf, signal: mergedSignal },
-        proxyOptions,
-      );
-    } finally {
-      clearTimeout(connectTimer);
-    }
-
-    if (!response.ok) {
-      // Pass error response through unchanged so chatCore can capture it.
-      return { response, url, headers, transformedBody: payload };
-    }
-
-    const wrapped = await wrapQoderSSE(response, `qoder/${qoderKey}`);
-    return { response: wrapped, url, headers, transformedBody: payload };
+    return { response: wrapped, url, headers: initHeaders, transformedBody: payload };
   }
 
   // Qoder device tokens don't refresh through OAuth — the upstream returns
@@ -582,4 +901,5 @@ export const __test__ = {
   wrapQoderSSE,
   buildQoderRequestBody,
   isBillingBlock,
+  parseQueueThrottle,
 };

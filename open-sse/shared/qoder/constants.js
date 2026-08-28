@@ -71,3 +71,11 @@ MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDA8iMH5c02LilrsERw9t6Pv5Nc
 6HRkPJ7S236FZz73In/KVuLnwI8JJ2CbuJap8kvheCCZpmAWpb/cPx/3Vr/J6I17
 XcW+ML9FoCI6AOvOzwIDAQAB
 -----END PUBLIC KEY-----`;
+
+// Queue throttle retry configuration
+// When Qoder returns code 10605, we retry up to QODER_QUEUE_MAX_RETRIES times
+// using the upstream retryAfterSeconds value, capped at QODER_QUEUE_RETRY_AFTER_SECONDS_CAP
+// with a fallback default of QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT
+export const QODER_QUEUE_MAX_RETRIES = 3;        // Number of retry attempts (4 total requests)
+export const QODER_QUEUE_RETRY_AFTER_SECONDS_CAP = 30;    // Maximum delay per attempt
+export const QODER_QUEUE_RETRY_AFTER_SECONDS_DEFAULT = 5; // Fallback when upstream doesn't specify

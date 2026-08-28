@@ -467,3 +467,91 @@ describe("wrapQoderSSE", () => {
     expect(wrapped).toBe(r);
   });
 });
+
+describe("wrapQoderSSE queue-throttle retry", () => {
+  const { wrapQoderSSE } = qoderExecutorInternals;
+
+  function makeResponse(lines, { status = 200 } = {}) {
+    const body = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const line of lines) controller.enqueue(encoder.encode(line));
+        controller.close();
+      },
+    });
+    return new Response(body, { status });
+  }
+
+  async function drain(response) {
+    const reader = response.body?.getReader();
+    if (!reader) return null;
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+    }
+    buf += decoder.decode();
+    return buf;
+  }
+
+  it("first-frame queue throttle with refetch succeeds after wait", async () => {
+    // Create factory functions that generate fresh responses for retry
+    const makeFirstResp = () => {
+      const firstBody = JSON.stringify({
+        statusCodeValue: 403,
+        body: '{"code":"10605","message":"Queue limit","retryAfterSeconds":1}',
+      });
+      return makeResponse([`data: ${firstBody}\n\n`], { status: 200 });
+    };
+    
+    // Second response: successful stream  
+    const secondInner = JSON.stringify({ choices: [{ delta: { content: "success" } }] });
+    const secondEnv = JSON.stringify({ statusCodeValue: 200, body: secondInner });
+    const makeSecondResp = () => makeResponse([`data: ${secondEnv}\n\ndata: [DONE]\n\n`]);
+
+    let callCount = 0;
+    const refetch = async () => {
+      callCount++;
+      if (callCount === 1) return makeFirstResp(); // Return fresh failed response
+      return makeSecondResp();
+    };
+
+    const wrapped = await wrapQoderSSE(makeFirstResp(), "qoder/ultimate", { refetch });
+
+    // With refetch available, should eventually succeed after one retry
+    expect(wrapped.status).toBe(200);
+    expect(wrapped.ok).toBe(true);
+    const out = await drain(wrapped);
+    expect(out).toContain("success");
+    expect(out).toContain("data: [DONE]");
+    expect(callCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("mid-stream queue throttle before content emits error chunk without retry (no refetch)", async () => {
+    const emptyEnv = JSON.stringify({ statusCodeValue: 200, body: '{"choices":[]}' });
+    const queueEnv = JSON.stringify({ statusCodeValue: 403, body: '{"code":"10605","message":"Queue limit"}' });
+    const upstream = `data: ${emptyEnv}\n\ndata: ${queueEnv}\n\n`;
+
+    const wrapped = await wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+
+    expect(wrapped.status).toBe(200);
+    expect(wrapped.ok).toBe(true);
+    const out = await drain(wrapped);
+    expect(out).toContain("[qoder error 403");
+    expect(out).toContain("10605");
+    expect(out).toContain("data: [DONE]");
+  });
+
+  it("multiple first-frame queue throttles all fail without refetch", async () => {
+    const queue1 = JSON.stringify({ statusCodeValue: 403, body: '{"code":"10605","message":"Q1","retryAfterSeconds":1}' });
+    const queue2 = JSON.stringify({ statusCodeValue: 429, body: '{"code":"10605","message":"Q2","retryAfterSeconds":2}' });
+    const resp = makeResponse([`data: ${queue1}\n\n`], { status: 403 });
+
+    const wrapped = await wrapQoderSSE(resp, "qoder/ultimate");
+
+    expect(wrapped.status).toBe(403);
+    expect(wrapped.ok).toBe(false);
+  });
+});
