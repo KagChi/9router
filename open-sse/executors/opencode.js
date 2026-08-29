@@ -252,6 +252,7 @@ function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
 }
 
+// Muse/luna are served by /zen/v1/responses; other models stay on /chat/completions.
 function isResponsesModel(model) {
   const base = baseModelId(model);
   return RESPONSES_MODELS.has(base) || isMuseSparkModel(base);
