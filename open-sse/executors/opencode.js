@@ -11,6 +11,10 @@ const OPENCODE_UA = "opencode";
 // plus explicit registry id here.
 const RESPONSES_MODELS = new Set(["muse-spark-1.2-contributor-free"]);
 
+function generateRequestId() {
+  return `msg_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
 function generateSessionId() {
   return `ses_${crypto.randomUUID().replace(/-/g, "")}`;
 }
