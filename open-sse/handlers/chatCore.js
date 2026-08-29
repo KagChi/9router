@@ -79,7 +79,11 @@ export async function handleChatCore({ body, modelInfo, credentials: rawCredenti
   if (bypassResponse) return bypassResponse;
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
-  const isMuseOnOpenCode = (provider === "opencode" || alias === "oc") && /muse/i.test(model);
+  // Muse/luna must hit the Responses API on opencode + opencode-go transports:
+  // the /chat/completions endpoint 500s for these models upstream.
+  const needsResponsesUpstream =
+    /muse/i.test(model) || /luna/i.test(model);
+  const isMuseOnOpenCode = needsResponsesUpstream && (provider === "opencode" || alias === "oc" || provider === "opencode-go" || alias === "opencode-go" || alias === "ocg");
   const modelTargetFormat = isMuseOnOpenCode ? FORMATS.OPENAI_RESPONSES : getModelTargetFormat(alias, model);
   // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
   // Per-model guard: only use the transport when the model declares support for that
@@ -88,11 +92,13 @@ export async function handleChatCore({ body, modelInfo, credentials: rawCredenti
   // route kimi to /messages.
   const modelSupportedFormats = getModelSupportedFormats(alias, model);
   const runtimeTransport = resolveTransport(provider, sourceFormat, credentials);
-  // Per-model guard: when a model declares supportedFormats, only use the
-  // sourceFormat-matched transport if that format is declared (opencode-go models
-  // differ — kimi/glm only do /chat/completions). Undeclared models keep the
-  // upstream default (use the transport), preserving behavior for glm/deepseek/...
-  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
+  // Muse/luna override: these models only work on the /responses endpoint, so a
+  // sourceFormat-matched chat transport must not win. Swap to the responses transport.
+  let useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
+  if (isMuseOnOpenCode) {
+    const responsesTransport = (PROVIDERS[provider]?.transports || []).find(t => t.format === FORMATS.OPENAI_RESPONSES);
+    if (responsesTransport) useTransport = responsesTransport;
+  }
   // A source-format-matched endpoint keeps the request lossless. Prefer it
   // over a model-level targetFormat, which is only the fallback for clients
   // whose wire format has no supported transport (for example MiniMax-M3:
@@ -271,27 +277,12 @@ export async function handleChatCore({ body, modelInfo, credentials: rawCredenti
     translatedBody.tools = defaultClaudeToolType(translatedBody.tools);
   }
 
-  // Per-request opt-out: client can bypass all token savers via header
-  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
-
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
   const rtkLine = formatRtkLog(rtkStats);
-  if (rtkLine) console.log(rtkLine);
+    if (rtkLine) console.log(rtkLine);
 
-  // Headroom: optional external proxy compression; fail open if proxy is absent.
-  const headroomDiagnostics = {};
-  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
-  const headroomLine = formatHeadroomLog(headroomStats);
-  const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
-  if (headroomLine) {
-    log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
-    if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
-      log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
-    }
-  } else if (tokenSaverEnabled && headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
-
-  // Token-saver flags accumulator for the single "⚙" log line below.
+    // Token-saver flags accumulator for the single "⚙" log line below.
   const xf = [];
 
   // Caveman: inject terse-style system prompt

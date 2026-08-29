@@ -27,3 +27,7 @@ export default {
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
 };
+
+// Muse/luna family: served only by /zen/v1/responses on both opencode nodes.
+// Registry is data-only; runtime /muse/i + /luna/i matching lives in
+// executors/opencode.js (isResponsesModel) + handlers/chatCore.js.

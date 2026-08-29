@@ -20,6 +20,10 @@ const STRIP_RULES = [
   // OpenCode GPT-5.6 Luna: /responses upstream rejects temperature/top_p presence
   // (Hermes oneshot 400: Unsupported parameter: temperature). Drop for luna family.
   { provider: "opencode", match: /luna/i, drop: ["temperature", "top_p"] },
+  // OpenCode Go (opencode-go) shares the zen upstream: muse/luna need the same
+  // param handling as the classic opencode provider.
+  { provider: "opencode-go", match: /muse/i, drop: ["max_tokens", "max_completion_tokens"] },
+  { provider: "opencode-go", match: /luna/i, drop: ["temperature", "top_p"] },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
   // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
   // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),
