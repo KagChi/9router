@@ -4,17 +4,25 @@ const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-conn-secret";
 const ENC_PREFIX = "enc1:";
 
+// ponytail: key cached per-process; rotation needs server restart. Move to DB_ENCRYPTION_KEY env for zero-reg-query.
+let cachedKey = null;
+
 function deriveKey() {
+  if (cachedKey) return cachedKey;
+  let key;
   if (process.env.DB_ENCRYPTION_KEY) {
-    return crypto.createHash("sha256").update(process.env.DB_ENCRYPTION_KEY).digest();
+    key = crypto.createHash("sha256").update(process.env.DB_ENCRYPTION_KEY).digest();
+  } else {
+    try {
+      const { machineIdSync } = require("node-machine-id");
+      const raw = machineIdSync();
+      key = crypto.createHash("sha256").update(raw + ENCRYPT_SALT).digest();
+    } catch {
+      key = crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
+    }
   }
-  try {
-    const { machineIdSync } = require("node-machine-id");
-    const raw = machineIdSync();
-    return crypto.createHash("sha256").update(raw + ENCRYPT_SALT).digest();
-  } catch {
-    return crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
-  }
+  cachedKey = key;
+  return key;
 }
 
 function encrypt(plaintext) {
