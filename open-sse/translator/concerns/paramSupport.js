@@ -24,6 +24,13 @@ const STRIP_RULES = [
   // param handling as the classic opencode provider.
   { provider: "opencode-go", match: /muse/i, drop: ["max_tokens", "max_completion_tokens"] },
   { provider: "opencode-go", match: /luna/i, drop: ["temperature", "top_p"] },
+  // Custom openai-compatible nodes pointed at opencode zen (e.g. OPENCODEGO node
+  // "openai-compatible-chat-13be..."): provider key is the node id, not
+  // "opencode-go", so match by model family — same upstream, same rejections.
+  // ponytail: providerless rules apply to ALL nodes; tighten to baseUrl check if
+  // another provider ever ships a /muse/ or /luna/ model that needs these params.
+  { match: /muse/i, drop: ["max_tokens", "max_completion_tokens"] },
+  { match: /luna/i, drop: ["temperature", "top_p"] },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
   // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
   // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),
