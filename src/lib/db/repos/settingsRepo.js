@@ -69,8 +69,14 @@ const DEFAULT_SETTINGS = {
   usageLookupPassword: "",
   // Providers whose tokens are NOT counted toward API key limits/usage.
   tokenLimitExcludedProviders: [],
+  webshareApiKey: "",
+  webshareAutoSyncEnabled: false,
+  webshareSyncIntervalMinutes: 60,
+  webshareLastSyncAt: null,
+  webshareLastSyncError: null,
+  webshareLastSyncStats: null,
+  webshareDeletedProxyIds: [],
 };
-
 async function readRaw() {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
