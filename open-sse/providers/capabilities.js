@@ -53,7 +53,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|openai-low-high-max|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -72,11 +72,27 @@ const SERVICE_KIND_CAPABILITIES = {
   stt: { audioInput: true },
   tts: { audioOutput: true },
   embedding: { tools: false },
+  ocr: { tools: false },
+  moderation: { tools: false },
 };
 
 export function capabilitiesFromServiceKind(kind) {
   return SERVICE_KIND_CAPABILITIES[kind] || null;
 }
+
+// OpenCode Zen Ox Alpha Free — image input + always-thinking reasoning
+// (provider catalog lists reasoning_options [low, high, max]; videoInput
+// stays false until transport support exists). Shared by the four
+// provider/id pairs below; never exposed globally so other providers'
+// same-named models keep pattern/default caps.
+const OX_ALPHA_CAPABILITIES = {
+  vision: true,
+  reasoning: true,
+  thinkingFormat: "openai-low-high-max",
+  thinkingCanDisable: false,
+  contextWindow: 1000000,
+  maxOutput: 131072,
+};
 
 /**
  * Canonical exact-id overrides — used for exceptions that patterns would
@@ -143,9 +159,7 @@ export const MODEL_CAPABILITIES = {
   // via OpenAI Responses input_image; reasoning supports up to xhigh.
   "muse-spark-1.2-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "muse-spark-1.3-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
-  // OpenCode Free Union Alpha — multimodal (text+vision), 262K context, 131K max output
-  "union-alpha": { vision: true, contextWindow: 262144, maxOutput: 131072 },
-};
+  };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
 
@@ -243,15 +257,19 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
     "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
   },
-  // Ollama Cloud — the generic *deepseek-v4* pattern misses the vision badge
-  // the library page publishes for this model (text+image in, 1M context).
-  // ponytail: thinkingFormat stays "deepseek" to preserve today's body shape;
-  // Ollama's native toggle is the top-level `think` field (bool or
-  // low/medium/high/max), which no format in thinkingUnified.js emits yet —
-  // openai-to-ollama.js drops it. Wire a "think" format when thinking on
-  // Ollama Cloud is actually needed.
-  "ollama": {
-    "deepseek-v4.1-flash:cloud": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  // OpenCode Zen Ox Alpha Free — full ids (opencode/opencode-go, seen by runtime
+  // request handling) + routed aliases (oc/ocg, read raw by combo reorderByCapabilities).
+  "opencode": {
+    "x-preview-f-free": OX_ALPHA_CAPABILITIES,
+  },
+  "oc": {
+    "x-preview-f-free": OX_ALPHA_CAPABILITIES,
+  },
+  "opencode-go": {
+    "ox-alpha-free": OX_ALPHA_CAPABILITIES,
+  },
+  "ocg": {
+    "ox-alpha-free": OX_ALPHA_CAPABILITIES,
   },
 };
 
@@ -570,8 +588,10 @@ function isCommandCodeTextOnly(model) {
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
+  // Strip a trailing thinking suffix "model(value)" so lookups resolve the base id.
+  const normalizedModel = model.replace(/\([^()]+\)\s*$/, "").trim();
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
-  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
 
   // CommandCode wire is /alpha/generate for every model. Family patterns
   // (deepseek-v4 → thinkingFormat:deepseek, vision:false) must not win here.
@@ -593,13 +613,13 @@ export function getCapabilitiesForModel(provider, model) {
   // 1. Provider-specific override
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
+    if (providerCaps?.[normalizedModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[normalizedModel] };
     if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
   }
 
   // 2. Canonical exact
   if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
-  if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
+  if (MODEL_CAPABILITIES[normalizedModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[normalizedModel] };
 
   // 3. Pattern match (first match wins), refined by catalog + name heuristic
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {

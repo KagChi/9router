@@ -57,6 +57,7 @@ const ALWAYS_PROTECTED = [
 const PROTECTED_API_PATHS = [
   "/api/settings",
   "/api/keys",
+  "/api/dashboard",
   "/api/providers",
   "/api/provider-nodes",
   "/api/proxy-pools",
@@ -72,6 +73,7 @@ const PROTECTED_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -92,6 +94,9 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/start",
   "/api/headroom/stop",
   "/api/headroom/proxy",
+  "/api/headroom/extras",
+  "/api/headroom/restart",
+  "/api/pxpipe",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);

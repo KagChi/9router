@@ -203,6 +203,14 @@ export async function handleVideoGet(request, requestId) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const provider = await resolveGetProvider(request, preferredConnectionId);
 
+  let provider = DEFAULT_VIDEO_PROVIDER;
+  if (preferredConnectionId) {
+    const pinnedConnection = await getProviderConnectionById(preferredConnectionId);
+    if (pinnedConnection?.provider && getVideoConfig(pinnedConnection.provider)) {
+      provider = pinnedConnection.provider;
+    }
+  }
+
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
   if (!credentials || credentials.allRateLimited) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
