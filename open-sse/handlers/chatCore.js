@@ -83,7 +83,10 @@ export async function handleChatCore({ body, modelInfo, credentials: rawCredenti
   // the /chat/completions endpoint 500s for these models upstream.
   const needsResponsesUpstream =
     /muse/i.test(model) || /luna/i.test(model);
-  const isMuseOnOpenCode = needsResponsesUpstream && (provider === "opencode" || alias === "oc" || provider === "opencode-go" || alias === "opencode-go" || alias === "ocg");
+  const isMuseOnOpenCode = needsResponsesUpstream && (provider === "opencode" || alias === "oc" || provider === "opencode-go" || alias === "opencode-go" || alias === "ocg"
+    // Custom openai-compatible nodes pointed at opencode zen (e.g. user's OPENCODEGO
+    // node → https://opencode.ai/zen/go/v1): same upstream, same chat-endpoint 500s.
+    || (provider?.startsWith?.("openai-compatible-") && /opencode\.ai\/zen/.test(credentials?.providerSpecificData?.baseUrl || "")));
   const modelTargetFormat = isMuseOnOpenCode ? FORMATS.OPENAI_RESPONSES : getModelTargetFormat(alias, model);
   // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
   // Per-model guard: only use the transport when the model declares support for that
@@ -96,8 +99,16 @@ export async function handleChatCore({ body, modelInfo, credentials: rawCredenti
   // sourceFormat-matched chat transport must not win. Swap to the responses transport.
   let useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
   if (isMuseOnOpenCode) {
+    // Registry providers have a responses transport; custom openai-compatible
+    // nodes don't — override their URL at executor level instead (luna/muse → /responses).
     const responsesTransport = (PROVIDERS[provider]?.transports || []).find(t => t.format === FORMATS.OPENAI_RESPONSES);
     if (responsesTransport) useTransport = responsesTransport;
+    else if (provider?.startsWith?.("openai-compatible-") && credentials) {
+      const base = (credentials.providerSpecificData?.baseUrl || "").replace(/\/$/, "");
+      // zen/go base (https://opencode.ai/zen/go/v1) → strip trailing /v1 semantics:
+      // chat nodes store .../v1; the Responses endpoint lives at .../v1/responses.
+      if (base) credentials.runtimeTransport = { format: FORMATS.OPENAI_RESPONSES, baseUrl: `${base}/responses` };
+    }
   }
   // A source-format-matched endpoint keeps the request lossless. Prefer it
   // over a model-level targetFormat, which is only the fallback for clients
