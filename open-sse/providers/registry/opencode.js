@@ -20,9 +20,9 @@ export default {
     noAuth: true,
   },
   models: [
-    // Only this model is served by /zen/v1/responses; the rest stay on
-    // /chat/completions, so the format is declared per-model, not per-provider.
+    // Muse free served by /zen/v1/responses (declared per-model).
     { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor Free", targetFormat: "openai-responses" },
+    { id: "x-preview-f-free", name: "Ox Alpha Free", targetFormat: "openai", supportedFormats: ["openai"] },
   ],
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,

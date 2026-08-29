@@ -84,9 +84,10 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   buildUrl(model) {
     const base = this.config.baseUrl;
-    return isResponsesModel(model)
-      ? `${base}/zen/v1/responses`
-      : `${base}/zen/v1/chat/completions`;
+    if (isResponsesModel(model) || /muse/i.test(model)) {
+      return `${base}/zen/v1/responses`;
+    }
+    return `${base}/zen/v1/chat/completions`;
   }
 
   buildHeaders(credentials, stream = true) {
