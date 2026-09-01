@@ -3,7 +3,7 @@
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
-import { U, parseResetTime } from "./shared.js";
+import { U, parseResetTime, toFiniteNumber } from "./shared.js";
 
 export { getGlmUsage } from "./glm.js";
 
@@ -356,5 +356,90 @@ export async function getOpencodeGoUsage(apiKey, proxyOptions = null) {
     return { plan: "OpenCode Go", quotas };
   } catch (error) {
     return { message: `OpenCode Go connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+// Command Code credits endpoint (undocumented; same one the official CLI uses
+// for its /usage overlay — extracted from dist/cli.mjs v1.39.3).
+// GET /alpha/billing/credits → { credits:{monthlyCredits,...}, windowLimits:{ fiveHour:{used,cap,resetAt}, weekly:{...} } }
+//   monthlyCredits is REMAINING, not a cap. No cap is exposed upstream, so the
+//   Monthly row is reconstructed from /alpha/usage/summary (totalCost, billing
+//   period): total = remaining + spentThisPeriod. /alpha/billing/subscriptions
+//   supplies the period end for the reset countdown. All rows are emitted as
+//   absolute {used,total,resetAt} — the dashboard computes the percentage.
+const COMMANDCODE_BASE = "https://api.commandcode.ai";
+const COMMANDCODE_HEADERS = {
+  "User-Agent": "cli",
+  "x-cli-environment": "production",
+  "x-command-code-version": "1.39.3",
+};
+
+async function commandCodeGet(path, apiKey, proxyOptions) {
+  const response = await proxyAwareFetch(`${COMMANDCODE_BASE}${path}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+      ...COMMANDCODE_HEADERS,
+    },
+  }, proxyOptions);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json().catch(() => null);
+}
+
+function commandCodeWindow(name, w) {
+  if (!w || typeof w !== "object") return null;
+  const total = toFiniteNumber(w.cap, 0);
+  if (total <= 0) return null;
+  return {
+    name,
+    used: toFiniteNumber(w.used, 0),
+    total,
+    // resetAt 0 = window idle → null hides the countdown instead of lying.
+    resetAt: w.resetAt ? parseResetTime(w.resetAt) : null,
+  };
+}
+
+export async function getCommandCodeUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Command Code API key not available." };
+  }
+
+  try {
+    const credits = await commandCodeGet("/alpha/billing/credits", apiKey, proxyOptions);
+    // Best-effort extras: without summary there is no Monthly cap to show.
+    const [summary, subscription] = await Promise.all([
+      commandCodeGet("/alpha/usage/summary", apiKey, proxyOptions).catch(() => null),
+      commandCodeGet("/alpha/billing/subscriptions", apiKey, proxyOptions).catch(() => null),
+    ]);
+
+    const quotas = [];
+    const windows = credits?.windowLimits || {};
+    const fiveHour = commandCodeWindow("5-hour", windows.fiveHour);
+    const weekly = commandCodeWindow("Weekly", windows.weekly);
+    if (fiveHour) quotas.push(fiveHour);
+    if (weekly) quotas.push(weekly);
+
+    const monthlyRemaining = toFiniteNumber(credits?.credits?.monthlyCredits, -1);
+    const spent = toFiniteNumber(summary?.totalCost, 0);
+    if (monthlyRemaining >= 0 && spent > 0) {
+      quotas.push({
+        name: "Monthly",
+        used: spent,
+        total: monthlyRemaining + spent,
+        resetAt: parseResetTime(subscription?.data?.currentPeriodEnd) || null,
+      });
+    }
+
+    if (quotas.length === 0) {
+      return { plan: "Command Code", message: "Command Code connected. No quota data reported.", quotas: {} };
+    }
+
+    return { plan: "Command Code", quotas };
+  } catch (error) {
+    if (error.message === "HTTP 401") {
+      return { message: "Command Code API key invalid or expired." };
+    }
+    return { message: `Command Code connected. Unable to fetch usage: ${error.message}` };
   }
 }
