@@ -91,11 +91,20 @@ function convertMessages(messages, model) {
     const msg = messages[i];
     let role = msg.role;
 
-    // Normalize: system/tool -> user
+    // Normalize: system/tool/developer -> user (#2235 Hermes)
+    // Hermes and other OpenAI-compatible agents send `developer` role and
+    // `tool` role messages; Kiro only understands user/assistant turns.
     const wasSystem = role === ROLE.SYSTEM;
-    if (role === ROLE.SYSTEM || role === ROLE.TOOL) {
+    const wasDeveloper = role === ROLE.DEVELOPER;
+    if (role === ROLE.SYSTEM || role === ROLE.TOOL || role === ROLE.DEVELOPER) {
       role = ROLE.USER;
     }
+
+    // Hermes/Codex echo `reasoning_content`/`reasoning` on assistant and
+    // tool messages; Kiro rejects unknown message keys — strip before convert.
+    // Top-level `reasoning_content` on a message is not part of Kiro wire
+    // format and is intentionally dropped (assistant text + toolUses are
+    // extracted explicitly below).
 
     // If role changes, flush pending
     if (role !== currentRole && currentRole !== null) {
@@ -154,27 +163,41 @@ function convertMessages(messages, model) {
               }
             } else if (typeof block.content === "string") {
               text = block.content;
+            } else if (block.content) {
+              try { text = JSON.stringify(block.content); } catch { text = String(block.content); }
             }
 
+            // #2235: preserve tool result content/status so Hermes parallel
+            // tool calls don't become empty "[Tool result: ]" after flatten.
+            const isError = block.is_error === true || block.content?.is_error === true;
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
+              status: isError ? "error" : "success",
+              content: [{ text: text || "" }],
             });
           });
         }
       }
 
-      // Handle tool role (from normalized)
+      // Handle tool role (from normalized) — Hermes sends string or array content
       if (msg.role === ROLE.TOOL) {
-        const toolContent = typeof msg.content === "string" ? msg.content : "";
+        let toolContent = "";
+        if (typeof msg.content === "string") toolContent = msg.content;
+        else if (Array.isArray(msg.content)) {
+          toolContent = msg.content.map(c => typeof c === "string" ? c : c?.text ?? JSON.stringify(c)).join("\n");
+        } else if (msg.content != null) {
+          try { toolContent = JSON.stringify(msg.content); } catch { toolContent = String(msg.content); }
+        }
         pendingToolResults.push({
           toolUseId: msg.tool_call_id,
           status: msg.is_error || msg.status === "error" ? "error" : "success",
-          content: [{ text: toolContent }]
+          content: [{ text: toolContent || "" }]
         });
       } else if (content) {
         // <instructions> tags: Claude models treat these as authoritative directives.
+        const isInstruction = wasSystem || wasDeveloper;
         pendingUserContent.push(
-          wasSystem ? `<instructions>\n${content}\n</instructions>` : content
+          isInstruction ? `<instructions>\n${content}\n</instructions>` : content
         );
       }
     } else if (role === ROLE.ASSISTANT) {
@@ -315,6 +338,12 @@ function convertMessages(messages, model) {
  *    legacy prompt tags remain only for models that need them.
  */
 export function openaiToKiroRequest(model, body, stream, credentials) {
+  // #2235 Hermes: strip OpenAI-specific top-level fields Kiro rejects.
+  // `tool_choice`, `parallel_tool_calls`, `response_format`, `metadata`,
+  // `store`, `reasoning` etc. are intentionally omitted — Kiro payload is
+  // built explicitly below from only messages/tools/inferenceConfig.
+  // Per-message `reasoning_content`/`reasoning`/`thinking` are also dropped
+  // in convertMessages (Kiro rejects unknown message keys).
   const messages = body.messages || [];
   const tools = body.tools || [];
   const maxTokens = 32000;
