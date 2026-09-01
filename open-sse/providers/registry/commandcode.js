@@ -53,6 +53,7 @@ export default {
   ],
   features: {
     usage: true,
+    // API-key connections must be able to hit /api/usage/<id> (like ocg does).
     usageApikey: true,
   },
 };
