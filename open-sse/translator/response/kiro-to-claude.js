@@ -232,7 +232,10 @@ export function kiroToClaudeResponse(chunk, state) {
  * a defensive helper for any non-streaming caller that hands us an aggregated
  * OpenAI-shaped completion.
  */
-export function kiroToClaudeNonStreaming(data) {
+export function kiroToClaudeNonStreaming(data, state = {}) {
+  const toolNameMap = state?.toolNameMap || state;
+  const resolveToolName = (name) =>
+    toolNameMap instanceof Map ? toolNameMap.get(name) || name : name;
   const content = [];
   const choice = data?.choices?.[0];
   const message = choice?.message || {};
@@ -254,7 +257,7 @@ export function kiroToClaudeNonStreaming(data) {
       content.push({
         type: "tool_use",
         id: tc.id || `toolu_${Date.now()}`,
-        name: restoreToolName(data, tc.function?.name),
+        name: resolveToolName(tc.function?.name || ""),
         input,
       });
     }
