@@ -79,7 +79,10 @@ function convertClaudeMessagesToKiro(messages, model) {
   };
 
   for (const msg of messages) {
-    const role = msg.role;
+    let role = msg.role;
+    // #2235 Hermes: normalize developer -> user (Claude API rejects developer,
+    // and Kiro only has user/assistant). Also strip reasoning keys if present.
+    if (role === ROLE.DEVELOPER) role = ROLE.USER;
     if (role !== currentRole && currentRole !== null) flushPending();
     currentRole = role;
 
@@ -117,10 +120,12 @@ function convertClaudeMessagesToKiro(messages, model) {
             } else if (block.content) {
               resultContent = JSON.stringify(block.content);
             }
+            // #2235: preserve content/status for Kiro toolResults
+            const isError = block.is_error === true;
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
-              status: block.is_error ? "error" : "success",
-              content: [{ text: resultContent }],
+              status: isError ? "error" : "success",
+              content: [{ text: resultContent || "" }],
             });
           }
         }
@@ -229,6 +234,9 @@ function extractClaudeSystemText(system) {
  * Build a Kiro payload directly from a Claude Messages API request body.
  */
 export function claudeToKiroRequest(model, body, stream, credentials) {
+  // #2235 Hermes: Claude path also may receive OpenAI-style developer role
+  // via gateway; handled in convertClaudeMessagesToKiro. Top-level
+  // OpenAI fields (tool_choice etc.) are intentionally omitted.
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const tools = Array.isArray(body.tools) ? body.tools : [];
   const maxTokens = body.max_tokens || 32000;
