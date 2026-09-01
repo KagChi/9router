@@ -345,7 +345,7 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   // Per-message `reasoning_content`/`reasoning`/`thinking` are also dropped
   // in convertMessages (Kiro rejects unknown message keys).
   const messages = body.messages || [];
-  const tools = body.tools || [];
+  let tools = body.tools || [];
   const maxTokens = 32000;
   const temperature = body.temperature;
   const topP = body.top_p;
@@ -356,6 +356,38 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const thinkingBudget = resolveKiroThinkingBudget(thinkingBody, credentials?.rawHeaders, modelIntent.model);
   const additionalModelRequestFields = buildKiroAdditionalModelRequestFieldsForModel(thinkingBody, upstreamModel);
   const usesNativeGptEffort = usesKiroNativeGptEffort(thinkingBody, upstreamModel);
+
+  // #2149: Kiro rejects history that references toolUses/toolResults without
+  // a tools schema. When callers omit body.tools but history still contains
+  // assistant.tool_calls / tool_use blocks, synthesize minimal specs so Kiro
+  // accepts the request. No-op when body.tools already populated.
+  if (tools.length === 0) {
+    const seen = new Set();
+    const synthesized = [];
+    const pushName = (name) => {
+      if (typeof name === "string" && name && !seen.has(name)) {
+        seen.add(name);
+        synthesized.push({
+          type: "function",
+          function: {
+            name,
+            description: `Tool: ${name}`,
+            parameters: { type: "object", properties: {}, required: [] },
+          },
+        });
+      }
+    };
+    for (const msg of messages) {
+      if (msg?.role !== "assistant") continue;
+      if (Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) pushName(tc?.function?.name || tc?.name);
+      }
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) if (block?.type === "tool_use") pushName(block.name);
+      }
+    }
+    if (synthesized.length > 0) tools = synthesized;
+  }
 
   const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
   const { history, currentMessage } = convertMessages(messages, upstreamModel);

@@ -154,6 +154,9 @@ describe("openaiToKiroRequest", () => {
     // fires and no phantom tool-calling capability is advertised.
 
     it("should flatten OpenAI tool_calls + tool result into history text with no tools array", () => {
+      // #2149: when body.tools is omitted but history contains tool_calls,
+      // Kiro now synthesizes a minimal tools schema so the request is not
+      // rejected with 400. Structured toolUses/toolResults are preserved.
       const body = {
         messages: [
           { role: "user", content: "Read the file" },
@@ -167,25 +170,21 @@ describe("openaiToKiroRequest", () => {
           { role: "tool", tool_call_id: "call_1", content: "file contents here" },
           { role: "user", content: "Summarize it" }
         ]
-        // note: no `tools`
+        // note: no `tools` — synthesized
       };
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
       const cs = result.conversationState;
 
-      // No structured tool content anywhere
-      expect(cs.currentMessage.userInputMessage.userInputMessageContext).toBeUndefined();
       const allJson = JSON.stringify(cs);
-      expect(allJson).not.toContain("toolUses");
-      expect(allJson).not.toContain("toolResults");
-
-      // Tool call + result preserved as readable text (call lands in history,
-      // result merges into the final currentMessage — assert across both)
-      expect(allJson).toContain("[Tool call: read_file(");
-      expect(allJson).toContain("[Tool result: file contents here]");
+      // Synthesized tools now keep structured history
+      expect(allJson).toContain("toolUses");
+      expect(allJson).toContain("toolResults");
+      expect(cs.currentMessage.userInputMessage.userInputMessageContext?.tools?.[0]?.toolSpecification?.name).toBe("read_file");
     });
 
     it("should flatten Claude tool_use / tool_result blocks with no tools array", () => {
+      // #2149: same synthesis for Anthropic tool_use blocks
       const body = {
         messages: [
           { role: "user", content: "Do it" },
@@ -209,10 +208,9 @@ describe("openaiToKiroRequest", () => {
       const cs = result.conversationState;
 
       const allJson = JSON.stringify(cs);
-      expect(allJson).not.toContain("toolUses");
-      expect(allJson).not.toContain("toolResults");
-      expect(allJson).toContain("[Tool call: search(");
-      expect(allJson).toContain("[Tool result: result text]");
+      expect(allJson).toContain("toolUses");
+      expect(allJson).toContain("toolResults");
+      expect(cs.currentMessage.userInputMessage.userInputMessageContext?.tools?.[0]?.toolSpecification?.name).toBe("search");
     });
 
     it("should keep structured tools when the client DOES provide a tools array", () => {
