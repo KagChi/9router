@@ -436,7 +436,7 @@ export function createSSEStream(options = {}) {
             // commonly disconnect right after the terminal chunk), so don't
             // rely on flush to persist usage.
             if (isFinishChunk && hasValidUsage(state.usage)) {
-              fireCompleteOnce(state.usage);
+              finalizeStream();
             }
           }
         }
