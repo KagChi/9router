@@ -276,10 +276,11 @@ describe("openaiToKiroRequest", () => {
       const cs = result.conversationState;
       const allJson = JSON.stringify(cs);
 
-      // The dangling structured reference is gone (would trigger Kiro 400)...
-      expect(allJson).not.toContain("orphan_call");
-      // ...but the content is preserved as salvaged text, not discarded.
-      expect(allJson).toContain("[Tool result: important orphaned output]");
+      // Orphaned toolResults are converted to inline text with id (2251 hardening)
+      // — structured reference is removed but content preserved.
+      expect(allJson).not.toContain('"toolResults"');
+      expect(allJson).toContain("[Tool Result (orphan_call)]");
+      expect(allJson).toContain("important orphaned output");
     });
   });
 

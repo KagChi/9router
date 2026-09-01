@@ -322,7 +322,24 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    return body;
+    void model;
+    void stream;
+    void credentials;
+    const b = body || {};
+    // Kiro API is strict and rejects unknown top-level fields (model, systemPrompt,
+    // agentMode, etc.). Only preserve fields built by the Kiro translator.
+    // Matches OmniRoute fix(kiro): strip injected model field (#478) + harden (#2251).
+    const kiroPayload = {};
+    if (b.conversationState !== undefined) kiroPayload.conversationState = b.conversationState;
+    if (b.profileArn !== undefined) kiroPayload.profileArn = b.profileArn;
+    if (b.inferenceConfig !== undefined) kiroPayload.inferenceConfig = b.inferenceConfig;
+    if (b.additionalModelRequestFields !== undefined)
+      kiroPayload.additionalModelRequestFields = b.additionalModelRequestFields;
+    if (!kiroPayload.conversationState) {
+      const { model: _model, ...rest } = b;
+      return rest;
+    }
+    return kiroPayload;
   }
 
   /**

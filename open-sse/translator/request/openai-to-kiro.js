@@ -4,7 +4,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4, v5 as uuidv5 } from "uuid";
 import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
 import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
 import {
@@ -51,11 +51,14 @@ function convertMessages(messages, model) {
 
   const flushPending = () => {
     if (currentRole === "user") {
-      const content = pendingUserContent.join("\n\n").trim() || "continue";
+      const text = pendingUserContent.join("\n\n").trim();
+      const hasContext = pendingToolResults.length > 0 || pendingImages.length > 0;
+      const content = text || (hasContext ? "" : "(empty)");
       const userMsg = {
         userInputMessage: {
           content: content,
-          modelId: ""
+          modelId: "",
+          origin: "AI_EDITOR",
         }
       };
 
@@ -76,7 +79,7 @@ function convertMessages(messages, model) {
       pendingToolResults = [];
       pendingImages = [];
     } else if (currentRole === "assistant") {
-      const content = pendingAssistantContent.join("\n\n").trim() || "...";
+      const content = pendingAssistantContent.join("\n\n").trim() || "(empty)";
       const assistantMsg = {
         assistantResponseMessage: {
           content: content
@@ -167,13 +170,15 @@ function convertMessages(messages, model) {
               try { text = JSON.stringify(block.content); } catch { text = String(block.content); }
             }
 
-            // #2235: preserve tool result content/status so Hermes parallel
+            // #2235 + #2446: preserve tool result content/status so Hermes parallel
             // tool calls don't become empty "[Tool result: ]" after flatten.
+            // Kiro rejects content:[{text:""}] with 400, so never send empty.
             const isError = block.is_error === true || block.content?.is_error === true;
+            const normalizedText = text.trim() ? text.trim() : "(no output)";
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
               status: isError ? "error" : "success",
-              content: [{ text: text || "" }],
+              content: [{ text: normalizedText }],
             });
           });
         }
@@ -191,7 +196,7 @@ function convertMessages(messages, model) {
         pendingToolResults.push({
           toolUseId: msg.tool_call_id,
           status: msg.is_error || msg.status === "error" ? "error" : "success",
-          content: [{ text: toolContent || "" }]
+          content: [{ text: toolContent.trim() ? toolContent.trim() : "(no output)" }]
         });
       } else if (content) {
         // <instructions> tags: Claude models treat these as authoritative directives.
@@ -230,16 +235,19 @@ function convertMessages(messages, model) {
 
         const lastMsg = history[history.length - 1];
         if (lastMsg?.assistantResponseMessage) {
-          lastMsg.assistantResponseMessage.toolUses = toolUses.map(tc => {
+          const NAMESPACE_KIRO_TOOLUSE = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+          lastMsg.assistantResponseMessage.toolUses = toolUses.map((tc, idx) => {
             if (tc.function) {
+              const stableId = tc.id || uuidv5(`${tc.function.name}:${idx}`, NAMESPACE_KIRO_TOOLUSE);
               return {
-                toolUseId: tc.id || uuidv4(),
+                toolUseId: stableId,
                 name: tc.function.name,
                 input: safeJSONParse(tc.function.arguments, {})
               };
             } else {
+              const stableId = tc.id || uuidv5(`${tc.name}:${idx}`, NAMESPACE_KIRO_TOOLUSE);
               return {
-                toolUseId: tc.id || uuidv4(),
+                toolUseId: stableId,
                 name: tc.name,
                 input: tc.input || {}
               };
@@ -274,6 +282,9 @@ function convertMessages(messages, model) {
     if (item.userInputMessage && !item.userInputMessage.modelId) {
       item.userInputMessage.modelId = model;
     }
+    if (item.userInputMessage && !item.userInputMessage.origin) {
+      item.userInputMessage.origin = "AI_EDITOR";
+    }
   });
 
   // Merge consecutive user messages (Kiro requires alternating user/assistant)
@@ -286,7 +297,9 @@ function convertMessages(messages, model) {
         mergedHistory.length > 0 &&
         mergedHistory[mergedHistory.length - 1].userInputMessage) {
       const prev = mergedHistory[mergedHistory.length - 1];
-      prev.userInputMessage.content += "\n\n" + current.userInputMessage.content;
+      prev.userInputMessage.content = prev.userInputMessage.content
+        ? `${prev.userInputMessage.content}\n\n${current.userInputMessage.content}`
+        : current.userInputMessage.content;
       // Merge context: combine toolResults, images, etc.
       const prevCtx = prev.userInputMessage.userInputMessageContext;
       const curCtx = current.userInputMessage.userInputMessageContext;
@@ -294,16 +307,71 @@ function convertMessages(messages, model) {
         if (!prevCtx) {
           prev.userInputMessage.userInputMessageContext = curCtx;
         } else {
-          if (curCtx.toolResults?.length > 0) {
-            prevCtx.toolResults = [...(prevCtx.toolResults || []), ...curCtx.toolResults];
-          }
-          if (curCtx.tools?.length > 0) {
-            prevCtx.tools = [...(prevCtx.tools || []), ...curCtx.tools];
+          for (const [key, value] of Object.entries(curCtx)) {
+            const existing = prevCtx[key];
+            if (Array.isArray(existing) && Array.isArray(value)) {
+              prevCtx[key] = [...existing, ...value];
+            } else {
+              prevCtx[key] = value;
+            }
           }
         }
       }
+    } else if (current.assistantResponseMessage &&
+        mergedHistory.length > 0 &&
+        mergedHistory[mergedHistory.length - 1].assistantResponseMessage) {
+      const prev = mergedHistory[mergedHistory.length - 1];
+      prev.assistantResponseMessage.content = prev.assistantResponseMessage.content
+        ? `${prev.assistantResponseMessage.content}\n\n${current.assistantResponseMessage.content}`
+        : current.assistantResponseMessage.content;
+      if (current.assistantResponseMessage.toolUses) {
+        const existing = prev.assistantResponseMessage.toolUses || [];
+        prev.assistantResponseMessage.toolUses = [...existing, ...current.assistantResponseMessage.toolUses];
+      }
     } else {
       mergedHistory.push(current);
+    }
+  }
+
+  // Ensure first message is user. Kiro API requires conversations to start
+  // with a user message (fixes REQUEST_BODY_INVALID for assistant-first).
+  if (mergedHistory.length > 0 && mergedHistory[0].assistantResponseMessage) {
+    const syntheticUserTurn = {
+      userInputMessage: {
+        content: "(empty)",
+        modelId: model,
+        origin: "AI_EDITOR",
+      },
+    };
+    Object.defineProperty(syntheticUserTurn, "__synthetic", {
+      value: true,
+      enumerable: false,
+      configurable: true,
+    });
+    mergedHistory.unshift(syntheticUserTurn);
+  }
+
+  // Ensure every toolResults has a preceding assistant toolUses. Truncated
+  // conversations can leave orphaned toolResults without a matching toolUses;
+  // Kiro rejects those. Convert orphaned results to inline text.
+  for (let i = 0; i < mergedHistory.length; i++) {
+    const item = mergedHistory[i];
+    if (!item.userInputMessage?.userInputMessageContext?.toolResults) continue;
+    const prev = mergedHistory[i - 1];
+    const hasPrecedingAssistant = prev?.assistantResponseMessage?.toolUses && prev.assistantResponseMessage.toolUses.length > 0;
+    if (!hasPrecedingAssistant) {
+      const toolResults = item.userInputMessage.userInputMessageContext.toolResults;
+      const toolResultTexts = toolResults.map(tr => {
+        const id = tr.toolUseId || "";
+        const text = tr.content?.map(c => c.text || "").join("\n") || "";
+        return id ? `[Tool Result (${id})]\n${text}` : `[Tool Result]\n${text}`;
+      }).join("\n\n");
+      const originalContent = item.userInputMessage.content || "";
+      item.userInputMessage.content = originalContent ? `${originalContent}\n\n${toolResultTexts}` : toolResultTexts;
+      delete item.userInputMessage.userInputMessageContext.toolResults;
+      if (Object.keys(item.userInputMessage.userInputMessageContext).length === 0) {
+        delete item.userInputMessage.userInputMessageContext;
+      }
     }
   }
 
@@ -315,11 +383,56 @@ function convertMessages(messages, model) {
       userInputMessage: {
         content: "",
         modelId: model,
+        origin: "AI_EDITOR",
       }
     };
+  } else if (!currentMessage.userInputMessage.origin) {
+    currentMessage.userInputMessage.origin = "AI_EDITOR";
+  }
+  if (!currentMessage.userInputMessage.modelId) {
+    currentMessage.userInputMessage.modelId = model;
   }
 
-  return { history: mergedHistory, currentMessage };
+  // Also check currentMessage for orphaned toolResults (not in history)
+  if (currentMessage?.userInputMessage?.userInputMessageContext?.toolResults) {
+    const lastHistory = mergedHistory[mergedHistory.length - 1];
+    const hasPrecedingAssistant = lastHistory?.assistantResponseMessage?.toolUses && lastHistory.assistantResponseMessage.toolUses.length > 0;
+    if (!hasPrecedingAssistant) {
+      const toolResults = currentMessage.userInputMessage.userInputMessageContext.toolResults;
+      const toolResultTexts = toolResults.map(tr => {
+        const id = tr.toolUseId || "";
+        const text = tr.content?.map(c => c.text || "").join("\n") || "";
+        return id ? `[Tool Result (${id})]\n${text}` : `[Tool Result]\n${text}`;
+      }).join("\n\n");
+      const originalContent = currentMessage.userInputMessage.content || "";
+      currentMessage.userInputMessage.content = originalContent ? `${originalContent}\n\n${toolResultTexts}` : toolResultTexts;
+      delete currentMessage.userInputMessage.userInputMessageContext.toolResults;
+      if (Object.keys(currentMessage.userInputMessage.userInputMessageContext).length === 0) {
+        delete currentMessage.userInputMessage.userInputMessageContext;
+      }
+    }
+  }
+
+  // Ensure alternating roles by inserting synthetic assistant messages
+  // between consecutive user turns that couldn't be merged.
+  const alternatingHistory = [];
+  for (const item of mergedHistory) {
+    const last = alternatingHistory[alternatingHistory.length - 1];
+    if (item.userInputMessage && last?.userInputMessage) {
+      const syntheticAssistantTurn = {
+        assistantResponseMessage: { content: "(empty)" },
+      };
+      Object.defineProperty(syntheticAssistantTurn, "__synthetic", {
+        value: true,
+        enumerable: false,
+        configurable: true,
+      });
+      alternatingHistory.push(syntheticAssistantTurn);
+    }
+    alternatingHistory.push(item);
+  }
+
+  return { history: alternatingHistory, currentMessage };
 }
 
 /**
