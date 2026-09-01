@@ -30,6 +30,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { sanitizeKiroTools } from "../utils/kiroSanitizer.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -199,6 +200,30 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
     stripContinuityFields(translatedBody);
+
+    // Kiro: sanitize tool schemas before dispatch. Kiro returns 400 "Improperly
+    // formed request" for unsupported JSON-Schema keywords (anyOf/$ref/if-then,
+    // etc.) and tool names >64 chars. Strip those keys and hash-truncate long
+    // names; merge the truncated→original nameMap into the existing
+    // `_toolNameMap` so kiro-to-openai maps streamed tool-call names back (#1375).
+    if (targetFormat === FORMATS.KIRO) {
+      const kiroTools =
+        translatedBody?.conversationState?.currentMessage?.userInputMessage
+          ?.userInputMessageContext?.tools;
+      if (kiroTools) {
+        const { tools: sanitizedKiroTools, nameMap: kiroNameMap } = sanitizeKiroTools(kiroTools);
+        translatedBody.conversationState.currentMessage.userInputMessage.userInputMessageContext.tools =
+          sanitizedKiroTools;
+        if (kiroNameMap.size > 0) {
+          const existing =
+            toolNameMap instanceof Map
+              ? toolNameMap
+              : new Map();
+          kiroNameMap.forEach((original, truncated) => existing.set(truncated, original));
+          toolNameMap = existing;
+        }
+      }
+    }
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).

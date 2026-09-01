@@ -159,9 +159,13 @@ export function kiroToClaudeResponse(chunk, state) {
         stopThinkingBlock(state, results);
         stopTextBlock(state, results);
         const toolBlockIndex = state.nextBlockIndex++;
+        const rawName = tc.function?.name || "";
+        // #1375: map truncated/sanitized Kiro name back to original
+        const toolName =
+          state.toolNameMap instanceof Map ? state.toolNameMap.get(rawName) || rawName : rawName;
         state.toolCalls.set(idx, {
           id: tc.id,
-          name: tc.function?.name || "",
+          name: toolName,
           blockIndex: toolBlockIndex,
         });
         results.push({
@@ -170,7 +174,7 @@ export function kiroToClaudeResponse(chunk, state) {
           content_block: {
             type: "tool_use",
             id: tc.id,
-            name: tc.function?.name || "",
+            name: toolName,
             input: {},
           },
         });
@@ -224,7 +228,10 @@ export function kiroToClaudeResponse(chunk, state) {
  * a defensive helper for any non-streaming caller that hands us an aggregated
  * OpenAI-shaped completion.
  */
-export function kiroToClaudeNonStreaming(data) {
+export function kiroToClaudeNonStreaming(data, state = {}) {
+  const toolNameMap = state?.toolNameMap || state;
+  const resolveToolName = (name) =>
+    toolNameMap instanceof Map ? toolNameMap.get(name) || name : name;
   const content = [];
   const choice = data?.choices?.[0];
   const message = choice?.message || {};
@@ -246,7 +253,7 @@ export function kiroToClaudeNonStreaming(data) {
       content.push({
         type: "tool_use",
         id: tc.id || `toolu_${Date.now()}`,
-        name: tc.function?.name || "",
+        name: resolveToolName(tc.function?.name || ""),
         input,
       });
     }

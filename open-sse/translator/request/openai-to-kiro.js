@@ -443,6 +443,19 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     if (topP !== undefined) payload.inferenceConfig.topP = topP;
   }
 
+  // Attach inverted tool name map (sanitized → original) so chatCore can
+  // reverse-map streamed tool-call names back to the client's originals.
+  // sanitizeKiroTools in chatCore also merges hash-truncated entries for schema
+  // sanitization, but pattern-sanitized names (e.g. "my.tool" → "my_tool")
+  // are only known here via normalizeKiroToolSpecs.
+  if (nameMap.size > 0) {
+    const inverted = new Map();
+    for (const [original, sanitized] of nameMap) {
+      if (sanitized !== original) inverted.set(sanitized, original);
+    }
+    if (inverted.size > 0) payload._toolNameMap = inverted;
+  }
+
   // Tag payload so the executor can route the upstream model id correctly.
   Object.defineProperty(payload, "_kiroUpstreamModel", {
     value: upstreamModel,

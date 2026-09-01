@@ -345,6 +345,14 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     if (topP !== undefined) payload.inferenceConfig.topP = topP;
   }
 
+  if (nameMap.size > 0) {
+    const inverted = new Map();
+    for (const [original, sanitized] of nameMap) {
+      if (sanitized !== original) inverted.set(sanitized, original);
+    }
+    if (inverted.size > 0) payload._toolNameMap = inverted;
+  }
+
   // Non-enumerable hint so the executor can route the upstream model id.
   Object.defineProperty(payload, "_kiroUpstreamModel", {
     value: upstreamModel,
