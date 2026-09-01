@@ -156,6 +156,18 @@
 - **Translator**: route Gemini thinking through `reasoning_effort` on OpenAI-compatible wire; convert `prefixItems` and ensure array items in Gemini schema sanitizer
 - **UI**: apply persisted theme before first paint to prevent flash on reload; translate combo vision adapter label
 
+# v0.5.60 (2026-08-29)
+
+## Sync
+- Rebase onto upstream `decolua/9router` v0.5.59 (41 new commits) — 35 local
+  commits replayed on top. Resolved conflicts in: provider registry, glm
+  provider/executor/usage/test, `open-sse/utils/stream.js` (finalizeStream vs
+  fireCompleteOnce), `open-sse/services/usage.js`+`misc.js`, executor
+  index, token refresh, package.json (playwright-core bump), `next.config.mjs`
+  (`serverExternalPackages`), `src/lib/db/repos/connectionsRepo.js` (zcode
+  dedup), and dashboard providers/`ConnectionRow.js` (displayName)
+- Bump version 0.5.59 → 0.5.60 (root + cli)
+
 # v0.5.59 (2026-08-29)
 
 ## Features
