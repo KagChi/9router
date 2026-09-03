@@ -4,12 +4,14 @@ import { PROVIDERS } from "../config/providers.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { isMuseSparkModel } from "../providers/models/helpers.js";
 
 const OPENCODE_UA = "opencode";
 // Models served by /zen/v1/responses; every other model stays on /chat/completions.
-// Muse family kept broad (user runs ocg/<model> variants): /muse/i match in buildUrl
-// plus explicit registry id here.
-const RESPONSES_MODELS = new Set(["muse-spark-1.2-contributor-free"]);
+const RESPONSES_MODELS = new Set([
+  "muse-spark-1.2-contributor-free",
+  "muse-spark-1.3-contributor-free",
+]);
 
 function generateRequestId() {
   return `msg_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -24,11 +26,9 @@ function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
 }
 
-// Muse/luna are served by /zen/v1/responses; other models stay on /chat/completions.
-// Keep the /muse/i match broad (ocg/<variant> ids) per user's setup.
 function isResponsesModel(model) {
   const base = baseModelId(model);
-  return RESPONSES_MODELS.has(base) || /muse/i.test(base) || /luna/i.test(base);
+  return RESPONSES_MODELS.has(base) || isMuseSparkModel(base);
 }
 
 function resolveOpencodeSession(body, credentials) {
@@ -89,10 +89,9 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   buildUrl(model) {
     const base = this.config.baseUrl;
-    if (isResponsesModel(model) || /muse/i.test(model)) {
-      return `${base}/zen/v1/responses`;
-    }
-    return `${base}/zen/v1/chat/completions`;
+    return isResponsesModel(model)
+      ? `${base}/zen/v1/responses`
+      : `${base}/zen/v1/chat/completions`;
   }
 
   buildHeaders(credentials, stream = true) {
