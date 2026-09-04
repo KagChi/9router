@@ -568,6 +568,21 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "groq":
+        // Requests/Tokens rate-limit windows from response headers — absolute
+        // used/total (calculatePercentage derives the bar), like Codex/Kiro.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       case "ollama":
         // Session (5h) / Weekly (7d) usage % from ollama.com/api/usage.
         // remainingPercentage only — no absolute remaining (UI treats remaining as %).
@@ -595,6 +610,22 @@ export function parseQuotaData(provider, data) {
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
               unlimited: quota.unlimited,
+            });
+          });
+        }
+        break;
+
+      case "commandcode":
+        // Quotas arrive as absolute {used,total,resetAt} rows (array).
+        // No remaining/remainingPercentage fields — the UI computes %.
+        if (Array.isArray(data.quotas)) {
+          data.quotas.forEach((quota) => {
+            if (!quota || typeof quota !== "object") return;
+            normalizedQuotas.push({
+              name: quota.name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
             });
           });
         }

@@ -5,6 +5,7 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
+import { FORMATS } from "../formats.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
@@ -20,6 +21,8 @@ const FORMAT_TO_NATIVE = {
   antigravity: "gemini-budget",
   kiro: "kiro",
 };
+
+const RESPONSES_TARGETS = new Set([FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI_RESPONSE]);
 
 // Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
 export function stripThinkingSuffix(model) {
@@ -105,12 +108,16 @@ export function extractThinking(body) {
 // at the call-site where intent is snapshotted before format translation.
 export const captureThinking = extractThinking;
 
-// Resolve thinking format: provider override > capability > derive(targetFormat).
+const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
+
 function resolveFormat(targetFormat, model, provider) {
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
-  if (caps.thinkingFormat) return caps.thinkingFormat;
+  const isOpenAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
+  if (caps.thinkingFormat && !(isOpenAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
+    return caps.thinkingFormat;
+  }
   return FORMAT_TO_NATIVE[targetFormat] || "openai";
 }
 
@@ -154,6 +161,16 @@ function toKimiReasoningEffort(cfg) {
   if (level === "minimal") return "low";
   if (level === "xhigh") return "max";
   if (["low", "medium", "high", "max"].includes(level)) return level;
+  return null;
+}
+
+// Ox Alpha always-thinking models: upstream accepts only low/high/max.
+// auto/unknown → null (caller omits the field so the upstream default applies).
+function toLowHighMaxLevel(cfg) {
+  const level = toLevel(cfg);
+  if (level === "none" || level === "minimal" || level === "low") return "low";
+  if (level === "medium" || level === "high") return "high";
+  if (level === "xhigh" || level === "max" || level === "ultra") return "max";
   return null;
 }
 
@@ -235,14 +252,17 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
       break;
     }
+    case "openai-low-high-max": {
+      const level = toLowHighMaxLevel(eff);
+      if (level) body.reasoning_effort = level;
+      break;
+    }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      // output_config.effort alone does NOT turn thinking on: Anthropic requires
-      // an explicit thinking:{type:"adaptive"} on Opus 4.6/4.7/4.8 and Sonnet 4.6
-      // ("thinking is off unless you explicitly set it"), and Anthropic-compatible
-      // shims (e.g. GitHub Copilot /v1/messages) default thinking off even for
-      // Sonnet 5. Send both fields — the documented adaptive-thinking shape.
-      body.thinking = { type: "adaptive" };
+      // Models that can disable thinking need the explicit adaptive switch.
+      // Permanently adaptive models such as Fable 5.1 accept effort directly.
+      if (canDisable) body.thinking = { type: "adaptive" };
+      else delete body.thinking;
       const level = toLevel(eff);
       body.output_config = { effort: level === "xhigh" ? "high" : level };
       break;
@@ -359,7 +379,17 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   const supportedLevels = getThinkingLevels(provider, cleanModel);
+  const prior = body.reasoning;
+  const priorReasoning = prior && typeof prior === "object" ? prior : null;
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels);
+  if (RESPONSES_TARGETS.has(targetFormat)) nestReasoningEffort(body, priorReasoning);
   return body;
+}
+
+function nestReasoningEffort(body, priorReasoning) {
+  if (typeof body.reasoning_effort !== "string") return;
+  const effort = body.reasoning_effort;
+  delete body.reasoning_effort;
+  body.reasoning = { ...priorReasoning, effort };
 }

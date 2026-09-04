@@ -46,7 +46,7 @@ function getPingTimeoutMs(model) {
   return 15_000;
 }
 
-async function getInternalHeaders() {
+async function getInternalHeaders(connectionId = null) {
   let apiKey = null;
   try {
     const keys = await getApiKeys();
@@ -56,12 +56,13 @@ async function getInternalHeaders() {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+  if (connectionId) headers["x-9router-connection-id"] = String(connectionId);
   return headers;
 }
 
-export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`) {
-  const headers = await getInternalHeaders();
-  const timeoutMs = getPingTimeoutMs(model);
+export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || getPingTimeoutMs(model));
+  const headers = await getInternalHeaders(options.connectionId);
   const start = Date.now();
 
   if (kind === "embedding") {

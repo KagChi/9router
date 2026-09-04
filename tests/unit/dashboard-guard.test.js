@@ -125,6 +125,25 @@ describe("dashboard guard public LLM API access", () => {
     expect(response.body.error).toBe("API key required for remote API access");
   });
 
+  it("rejects remote /responses rewrite without API key", async () => {
+    const response = await proxy(request("/responses", { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it("allows remote /responses rewrite with a valid API key", async () => {
+    mocks.validateApiKey.mockResolvedValue(true);
+
+    const response = await proxy(request("/responses", {
+      host: "router.example.com",
+      authorization: "Bearer sk-valid",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
+  });
+
   it("allows remote codex rewrite with valid API key", async () => {
     mocks.validateApiKey.mockResolvedValue(true);
 
@@ -260,6 +279,43 @@ describe("dashboard guard local-only access", () => {
 
   it("allows local-only route with valid CLI token", async () => {
     const response = await proxy(request("/api/mcp/filesystem/sse", {
+      host: "router.example.com",
+      "x-9r-cli-token": "cli-token",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it.each([
+    "/api/pxpipe/install",
+    "/api/pxpipe/status",
+    "/api/headroom/extras",
+    "/api/headroom/restart",
+  ])("denies management route %s from remote host even when requireLogin=false", async (pathname) => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+    const response = await proxy(request(pathname, { host: "router.example.com" }));
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Local only: CLI token required");
+  });
+
+  it.each(["/api/pxpipe/install", "/api/headroom/extras"])(
+    "allows management route %s on loopback when requireLogin=false",
+    async (pathname) => {
+      mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+      const response = await proxy(localRequest(pathname, {
+        host: "localhost:20128",
+        origin: "http://localhost:20128",
+      }));
+
+      expect(response).toBe(mocks.nextResponse);
+    }
+  );
+
+  it("allows pxpipe install from remote host with valid CLI token", async () => {
+    const response = await proxy(request("/api/pxpipe/install", {
       host: "router.example.com",
       "x-9r-cli-token": "cli-token",
     }));

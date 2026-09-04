@@ -1,24 +1,131 @@
-tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns descriptive error if macOS db file exists but cannot be opened
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns login-prompt error when tokens are missing even after fallback
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns not-found when no macOS cursor db paths are accessible
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unsupported platform returns 400
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unwraps JSON-encoded string values
-tests/unit/openai-to-claude.test.js :: openaiToClaudeResponse omits empty Read pages tool argument before emitting Claude input deltas
-tests/unit/rtk.test.js :: RTK flag default off, toggle works
-tests/unit/rtk.test.js :: compressMessages (disabled) returns null when disabled
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses Claude array-form tool_result text parts
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses Claude string-form tool_result
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses OpenAI tool message (string content)
-tests/unit/rtk.test.js :: compressMessages (enabled) handles mix of messages without crashing
-tests/unit/rtk.test.js :: compressMessages (enabled) never produces empty content (R14 guard)
-tests/unit/rtk.test.js :: compressMessages (enabled) skips below MIN_COMPRESS_SIZE (<500 bytes)
-tests/unit/rtk.test.js :: compressMessages (enabled) skips is_error tool_result
-tests/unit/rtk.test.js :: compressMessages (enabled) skips when body has no messages
-tests/unit/translator-request-normalization.test.js :: request normalization claudeToOpenAIRequest flattens text-only content arrays into string
-tests/unit/translator-request-normalization.test.js :: request normalization filterToOpenAIFormat flattens text-only arrays to string
-tests/unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
-tests/unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
+# Known-fails baseline (auto-generated from full vitest run at merge HEAD 09b3cc85).
+#
+# 121 failing assertions, 29 files. Every entry fails IDENTICALLY on either the
+# fork base (1cb30860) or upstream pr-3694 tree — i.e. ZERO merge regressions:
+#   - 26 files: pre-existing fork failures (present on 1cb30860).
+#   - pxpipe-install / opencode-go-usage-3334 / opencode-ox-alpha-free: PR-added
+#     tests that fail on upstream pr-3694's own checkout (upstream-broken).
+# Merge also FIXED 5 baseline failures (bugs-toClaude-context, db-concurrent,
+# golden-request). Keyed as 'tests/<rel> :: <fullName>'.
+#
+unit/alibaba-token-plan-provider.test.js :: Alibaba Token Plan provider keeps every registry id unique after adding the provider
+unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
+unit/codex-fast-capacity.test.js :: Codex fast tier and capacity handling uses ChatGPT workspace header fallback
+unit/codex-image-fetch.test.js :: CodexExecutor image handling execute() prefetches images before sending to upstream
+unit/codex-image-fetch.test.js :: CodexExecutor image handling fetches 1MB remote image and inlines it as base64 data URI
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode decodes name, toolName, toolCallId, and typed args map
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode handles empty args map
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult error / toolNotFound builds error result (field 2)
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult error / toolNotFound builds toolNotFound result (field 5)
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult image content builds image item with raw bytes + mime type
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult image content builds mixed text + image content
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success builds success with multiple text items
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success builds success with single text content
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success marks is_error=true
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition accepts flat tool shape (no .function wrapper)
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition encodes name, description, input_schema (Value), provider, tool_name
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition preserves nested JSON-schema types
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) encodeMcpTools produces empty bytes for no tools
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) encodeMcpTools wraps multiple tool defs as repeated field 1
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes array of mixed
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes bool false
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes bool true
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes deeply nested
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes empty object
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes flat object
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes float
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes integer
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes nested object
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes null
+unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes string
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes a text-only run request with system + model
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes conversation_history from prior turns including tool calls/results
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes mcp_tools (field 4) when tools are provided
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame omits mcp_tools when no tools provided
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts array text content
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts history with assistant tool_calls + tool results
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts plain text content
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts request with tools declared
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects missing messages
+unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects non-text (image) content
+unit/cursor-models.test.js :: Cursor live model catalog fetches the account-specific catalog and caches it
+unit/deepseek-usage.test.js :: deepseek registry usage flags is listed for apikey quota dashboard
+unit/embedding-usage-persistence.test.js :: embedding usage persistence does not record inexact usage 0
+unit/embedding-usage-persistence.test.js :: embedding usage persistence does not record inexact usage 1
+unit/embedding-usage-persistence.test.js :: embedding usage persistence does not record inexact usage 2
+unit/embedding-usage-persistence.test.js :: embedding usage persistence does not record inexact usage 3
+unit/embedding-usage-persistence.test.js :: embedding usage persistence does not record inexact usage 4
+unit/embedding-usage-persistence.test.js :: embedding usage persistence does not record inexact usage 5
+unit/embedding-usage-persistence.test.js :: embedding usage persistence does not record inexact usage 6
+unit/embedding-usage-persistence.test.js :: embedding usage persistence records exact provider usage for successful embedding requests
+unit/executor-const-guard.test.js :: antigravity retry (intentional change: 429=6, 503=3) 429 attempts = 6
+unit/fish-audio-tts.test.js :: Fish Audio TTS provider keeps registry ids and aliases unique
+unit/force-stream-config.test.js :: forceStream provider config keeps forced-stream providers streaming for JSON clients when body.stream is false
+unit/force-stream-config.test.js :: forceStream provider config keeps forced-stream providers streaming for JSON clients when body.stream is undefined
+unit/glm-usage.test.js :: GLM Coding Plan usage parses per-model token balances from billing/balance
+unit/glm-usage.test.js :: GLM Coding Plan usage returns auth message when billing/current is unauthorized
+unit/grok-cli-oauth-probe.test.js :: classifyOAuthProbeResult (grok-cli) Codex-style acceptStatuses 400 stays silent success (no soft warning)
+unit/grok-cli-oauth-probe.test.js :: classifyOAuthProbeResult (grok-cli) treats 200 as hard success
+unit/grok-cli-oauth-probe.test.js :: classifyOAuthProbeResult (grok-cli) treats 401 as hard auth failure
+unit/grok-cli-oauth-probe.test.js :: classifyOAuthProbeResult (grok-cli) treats 402 spending-limit as soft success (connected, out of credits)
+unit/grok-cli-oauth-probe.test.js :: classifyOAuthProbeResult (grok-cli) treats 403 as access denied
+unit/grok-cli-usage.test.js :: getUsageForProvider(grok-cli) falls back to GetGrokCreditsConfig gRPC when paid sub has no REST numeric quota
+unit/grok-cli-usage.test.js :: getUsageForProvider(grok-cli) keeps subscription message when REST empty and gRPC fails open
+unit/image-fetch-hardening.test.js :: fetchImageAsBase64 hardening accepts valid PNG from public host
+unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery bounds the retry HTTP error body
+unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery keeps model-controlled parser detail out of the retry system prompt
+unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery surfaces retry HTTP failures as SSE after heartbeat commits headers
+unit/mimo-free.live.test.js :: MiMo Free anti-abuse gate (live) chat WITH Chrome User-Agent → 200
+unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
+unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
+unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
+unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns descriptive error if macOS db file exists but cannot be opened
+unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns login-prompt error when tokens are missing even after fallback
+unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns not-found when no macOS cursor db paths are accessible
+unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unsupported platform returns 400
+unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unwraps JSON-encoded string values
+unit/openai-to-claude.test.js :: openaiToClaudeResponse omits empty Read pages tool argument before emitting Claude input deltas
+unit/opencode-go-usage-3334.test.js :: parseQuotaData(opencode-go) forwards remainingPercentage for every window
+unit/opencode-ox-alpha-free.test.js :: OpenCode Free Ox Alpha Free (oc/x-preview-f-free) Claude-source request still targets openai (no extra transport needed on base)
+unit/opencode-ox-alpha-free.test.js :: OpenCode Free Ox Alpha Free (oc/x-preview-f-free) exposes Ox Alpha Free as static OpenAI Chat Completions model
+unit/opencode-ox-alpha-free.test.js :: OpenCode Free Ox Alpha Free (oc/x-preview-f-free) resolves image input + reasoning capability deltas from models.dev metadata
+unit/pxpipe-install.test.js :: pxpipe install failure hygiene async error then exit: settles once, timer cleared, fd closed once, bounded diagnostic
+unit/pxpipe-install.test.js :: pxpipe install failure hygiene late error after nonzero exit does not append duplicate diagnostic
+unit/pxpipe-install.test.js :: pxpipe install failure hygiene nonzero exit: bounded diagnostic, single rejection, fd closed once
+unit/pxpipe-install.test.js :: pxpipe install failure hygiene signal exit (null, SIGTERM): bounded INSTALL_SIGNAL_SIGTERM, no exit code 0
+unit/pxpipe-install.test.js :: pxpipe install failure hygiene signal exit with unsafe signal string: falls back to bounded INSTALL_FAILED, no raw leak
+unit/pxpipe-install.test.js :: pxpipe install failure hygiene sync spawn EINVAL: bounded code preserved, fixed diagnostic, fd closed once, no path/message leak
+unit/pxpipe-install.test.js :: pxpipe install failure hygiene timeout: fixed diagnostic written, child killed, rejects once, fd closed once
+unit/pxpipe-install.test.js :: pxpipe install spawn options windows Bun-like execPath: primary missing, where.exe fallback finds valid node+cli, spawns exact argv
+unit/pxpipe-install.test.js :: pxpipe install spawn options windows: spawns node + npm-cli.js with exact argv and NO shell
+unit/pxpipe-install.test.js :: pxpipe install success + serialization concurrent installs serialize onto one spawn
+unit/pxpipe-install.test.js :: pxpipe install success + serialization fake success: managed package.json + library entry yield installed true with version
+unit/qoder-usage.test.js :: getUsageForProvider(qoder) auth selection apikey path normalizes keys stored without the pt- prefix
+unit/qoder-usage.test.js :: getUsageForProvider(qoder) auth selection caches the PAT exchange so repeat quota refreshes don't re-exchange
+unit/qoder-usage.test.js :: getUsageForProvider(qoder) auth selection maps quota-endpoint 401/403 to invalid-or-expired message
+unit/qoder-usage.test.js :: getUsageForProvider(qoder) auth selection prefers apiKey over accessToken when both present
+unit/qoder-usage.test.js :: getUsageForProvider(qoder) auth selection surfaces PAT exchange failures as a message (no quota call)
+unit/request-details-tab.test.js :: getDistinctProviders — providers route (no full-row parse) returns unique provider list without parsing data blobs
+unit/request-details-tab.test.js :: request details — tab crash-risk cases oversized field → stored truncated + reparseable (no circular)
+unit/security-audit.test.js :: AUDIT-001: Synchronous restart guard mitmIsRestarting should be reset on max-restarts early return
+unit/security-audit.test.js :: AUDIT-001: Synchronous restart guard mitmIsRestarting should be set before first await expression
+unit/security-audit.test.js :: AUDIT-002: API key masking byApiKey object keys should use stable non-secret identity, not masked or raw keys
+unit/security-audit.test.js :: AUDIT-002: API key masking getUsageHistory should use apiKeyMasked instead of apiKey
+unit/security-audit.test.js :: AUDIT-002: API key masking getUsageStats should use apiKeyMasked in byApiKey entries
+unit/security-audit.test.js :: AUDIT-002: API key masking source should contain maskApiKey function
+unit/security-audit.test.js :: AUDIT-003: Proxy URL validation source should contain validateProxyUrl function
+unit/security-audit.test.js :: AUDIT-004: Atomic lock file for MITM startup manager.js should define LOCK_FILE constant
+unit/security-audit.test.js :: AUDIT-004: Atomic lock file for MITM startup should clean up lock file on all exit paths
+unit/security-audit.test.js :: AUDIT-004: Atomic lock file for MITM startup should use O_EXCL flag (wx) for atomic creation
+unit/security-audit.test.js :: AUDIT-018: XSS escaping in OAuth callback should escape ampersand, angle brackets, and quotes
+unit/security-audit.test.js :: AUDIT-018: XSS escaping in OAuth callback should use safeMessage in rendered HTML, not raw message
+unit/security-audit.test.js :: AUDIT-018: XSS escaping in OAuth callback source should contain escapeHtml function
+unit/translator-helpers-edge.test.js :: normalizeClaudePassthrough — haiku adaptive thinking (docs 11 §1) hoists mid-conversation system messages into top-level system
+unit/translator-request-normalization.test.js :: request normalization claudeToOpenAIRequest flattens text-only content arrays into string
+unit/translator-request-normalization.test.js :: request normalization filterToOpenAIFormat flattens text-only arrays to string
+unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
+unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
+unit/venice-provider.test.js :: Venice AI provider keeps every registry id unique after adding venice
+unit/windsurf-executor.test.js :: WindsurfExecutor class PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)
+unit/windsurf-executor.test.js :: WindsurfExecutor class buildUrl returns the GetChatMessage endpoint
+unit/windsurf-executor.test.js :: WindsurfExecutor class constructor wires config from PROVIDERS.windsurf

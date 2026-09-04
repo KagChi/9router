@@ -105,35 +105,20 @@ export default function ConnectionRow({
   const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
   const isOAuthConnection = rowAuthType === "oauth";
   const isCookieConnection = rowAuthType === "cookie";
-  const authIcon = isCookieConnection
-    ? "cookie"
-    : isOAuthConnection
-      ? "lock"
-      : "key";
-  const authLabel = isOAuthConnection
-    ? "OAuth"
-    : isCookieConnection
-      ? "Cookie"
-      : "API Key";
-  const displayName =
-    connection.name?.trim() ||
-    connection.email?.trim() ||
-    connection.displayName?.trim() ||
-    (isOAuthConnection
-      ? "OAuth Account"
-      : isCookieConnection
-        ? "Cookie Account"
-        : "API Key");
-  const secondaryDisplayName =
-    connection.name?.trim() &&
-    connection.email?.trim() &&
-    connection.name.trim() !== connection.email.trim()
-      ? connection.email.trim()
-      : connection.name?.trim() &&
-          connection.displayName?.trim() &&
-          connection.name.trim() !== connection.displayName.trim()
-        ? connection.displayName.trim()
-        : null;
+const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
+  const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
+  const codexPlan = connection.provider === "codex" && typeof connection.providerSpecificData?.chatgptPlanType === "string"
+    ? connection.providerSpecificData.chatgptPlanType.trim()
+    : "";
+  const displayName = connection.name?.trim()
+    || connection.email?.trim()
+    || connection.displayName?.trim()
+    || (isOAuthConnection ? "OAuth Account" : isCookieConnection ? "Cookie Account" : "API Key");
+  const secondaryDisplayName = connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()
+    ? connection.email.trim()
+    : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
+      ? connection.displayName.trim()
+      : null;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -238,6 +223,11 @@ export default function ConnectionRow({
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {codexPlan && (
+              <Badge variant="primary" size="sm" className="capitalize">
+                {codexPlan}
+              </Badge>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
@@ -430,6 +420,10 @@ ConnectionRow.propTypes = {
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
+    provider: PropTypes.string,
+    providerSpecificData: PropTypes.shape({
+      chatgptPlanType: PropTypes.string,
+    }),
     modelLockUntil: PropTypes.string,
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,

@@ -49,6 +49,10 @@ async function matchNodeByPrefix(prefix, model) {
   const e = embeddingNodes.find((node) => node.prefix === prefix);
   if (e) return { provider: e.id, model };
 
+  const multiNodes = await getProviderNodes({ type: "multi-compatible" });
+  const m = multiNodes.find((node) => node.prefix === prefix);
+  if (m) return { provider: m.id, model };
+
   return null;
 }
 

@@ -180,6 +180,14 @@ function withInitialFrame(state, frames) {
 
 // ─── CodeWhisperer → OpenAI conversion ───────────────────────────────────────
 
+const INLINE_IMAGE_MIME_BY_FORMAT = new Map([
+  ["png", "image/png"],
+  ["jpeg", "image/jpeg"],
+  ["jpg", "image/jpeg"],
+  ["gif", "image/gif"],
+  ["webp", "image/webp"],
+]);
+
 /**
  * Safely stringify a tool-call input value.
  * OpenAI expects `function.arguments` to be a JSON string, never an object.
@@ -215,22 +223,32 @@ function convertUserInputMessage(uim) {
     });
   }
 
-  // Build user message with text + images
-  const text = (uim.content || "").trim();
-  const images = uim.images || [];
+const images = Array.isArray(uim.images) ? uim.images : [];
+  const imageParts = images
+    .filter(image => image !== null
+      && typeof image === "object"
+      && !Array.isArray(image)
+      && image.source !== null
+      && typeof image.source === "object"
+      && !Array.isArray(image.source)
+      && INLINE_IMAGE_MIME_BY_FORMAT.has(image.format)
+      && typeof image.source.bytes === "string"
+      && image.source.bytes.length > 0)
+    .map(image => ({
+      type: "image_url",
+      image_url: {
+        url: `data:${INLINE_IMAGE_MIME_BY_FORMAT.get(image.format)};base64,${image.source.bytes}`,
+      },
+    }));
 
-  if (images.length > 0) {
-    // Multimodal: content as array with text + images
+  // Emit user text only if it exists alongside OR when there are no tool results
+  const text = (uim.content || "").trim();
+  if (imageParts.length > 0) {
     const content = [];
     if (text) content.push({ type: "text", text });
-    for (const img of images) {
-      const mime = `image/${img.format || "png"}`;
-      const dataUri = `data:${mime};base64,${img.source.bytes}`;
-      content.push({ type: "image_url", image_url: { url: dataUri } });
-    }
+    content.push(...imageParts);
     out.push({ role: "user", content });
   } else if (text || toolResults.length === 0) {
-    // Text-only
     out.push({ role: "user", content: text });
   }
 

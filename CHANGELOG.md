@@ -1,4 +1,17 @@
-# v0.5.60 (2026-08-29)
+# v0.5.65-port (2026-09-04)
+
+## Merge: decolua/9router PR #3694 (sancaksert)
+
+Ported `feat/v0559-integration` onto this fork at merge-base v0.5.59:
+54 curated community PRs + author fixes: CommandCode real quota tracking
+(5h/weekly/monthly windows, reconstructed monthly cap), per-process
+encryption-key cache (kills Windows `cmd /c reg query` flares; see
+`DB_ENCRYPTION_KEY` in `.env.example`), luna/muse routing for custom zen
+nodes (runtime `/v1/responses` redirect + param strips), SSE
+done-sentinel flush ordering (ollama tail fix). Fork-side conflicting
+work (kiro, usage accounting, db repos, dashboard pages, stream) resolved
+in favor of the fork's diverged implementations; author fixes adapted to
+fork paths. `generateRequestId` restored in `open-sse/executors/opencode.js`# v0.5.60 (2026-08-29)
 
 ## Sync
 - Rebase onto upstream `decolua/9router` v0.5.59 (41 new commits) — 35 local

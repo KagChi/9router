@@ -36,7 +36,8 @@ const PUBLIC_API_PATHS = [
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
-const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex"];
+// Keep root-level rewrites here too: middleware runs before Next.js rewrites.
+const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex", "/responses"];
 
 // Loopback-only API paths (CloakBrowser captcha page has no dashboard session cookie).
 const LOCALHOST_PUBLIC_API_PATHS = ["/api/zcode/captcha"];
@@ -55,6 +56,7 @@ const ALWAYS_PROTECTED = [
 const PROTECTED_API_PATHS = [
   "/api/settings",
   "/api/keys",
+  "/api/dashboard",
   "/api/providers",
   "/api/provider-nodes",
   "/api/proxy-pools",
@@ -70,6 +72,7 @@ const PROTECTED_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -89,6 +92,9 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/start",
   "/api/headroom/stop",
   "/api/headroom/proxy",
+  "/api/headroom/extras",
+  "/api/headroom/restart",
+  "/api/pxpipe",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
