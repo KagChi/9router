@@ -145,8 +145,6 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
   }
 }
 
-}
-
 /**
  * Vercel AI Gateway usage — credit balance for the API key
  *

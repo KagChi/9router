@@ -156,6 +156,14 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Snapshot the output cap before DefaultExecutor's stripUnsupportedParams
+    // drops max_tokens/max_completion_tokens (muse/luna rules) — the Responses
+    // endpoint needs it as max_output_tokens.
+    const preCaps = {
+      max_output_tokens: body?.max_output_tokens,
+      max_completion_tokens: body?.max_completion_tokens,
+      max_tokens: body?.max_tokens,
+    };
     const out = super.transformRequest(model, body);
     if (!isResponsesModel(model || body?.model)) return out;
     const normalized = normalizeResponsesInput(out.input);
@@ -165,8 +173,9 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
     }
     // Responses names the output cap max_output_tokens, not max_tokens.
     if (out.max_output_tokens === undefined) {
-      if (out.max_completion_tokens !== undefined) out.max_output_tokens = out.max_completion_tokens;
-      else if (out.max_tokens !== undefined) out.max_output_tokens = out.max_tokens;
+      if (preCaps.max_output_tokens !== undefined) out.max_output_tokens = preCaps.max_output_tokens;
+      else if (preCaps.max_completion_tokens !== undefined) out.max_output_tokens = preCaps.max_completion_tokens;
+      else if (preCaps.max_tokens !== undefined) out.max_output_tokens = preCaps.max_tokens;
     }
     delete out.max_tokens;
     delete out.max_completion_tokens;
