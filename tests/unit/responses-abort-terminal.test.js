@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDisconnectAwareStream, pipeWithDisconnect, createStreamController } from "../../open-sse/utils/streamHandler.js";
 import { buildAbortedResponsesTerminalBytes } from "../../open-sse/utils/responsesStreamHelpers.js";
+import { buildStreamErrorBytes } from "../../open-sse/utils/streamHelpers.js";
 import {
   createResponsesAccumulator,
   reduceResponsesEvent

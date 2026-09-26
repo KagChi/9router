@@ -244,10 +244,7 @@ export async function createProviderConnection(data) {
       });
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find(
-        (c) =>
-          c.authType === "apikey" &&
-          c.name === data.name &&
-          c.apiKey === data.apiKey,
+        (c) => c.authType === "apikey" && c.name === data.name,
       );
     }
     // access_token: never dedup — user manages duplicates manually

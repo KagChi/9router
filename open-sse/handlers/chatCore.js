@@ -202,8 +202,6 @@ export async function handleChatCore({ body, modelInfo, credentials: rawCredenti
   }
 
 
-  // Per-request opt-out: client can bypass all token savers via header
-  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
   // Headroom: compress source messages before translation so all
   // output formats (commandcode, ollama, gemini, ...) are covered.
   // Uses sourceFormat so body.messages is always present.

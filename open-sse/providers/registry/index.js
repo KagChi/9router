@@ -131,7 +131,7 @@ import p126 from "./dahl.js";
 import p127 from "./atria.js";
 import p129 from "./agnes.js";
 import p130 from "./bai.js";
-import p124 from "./kenari.js";
+import p131 from "./kenari.js";
 export default [
   p0,
   p1,
@@ -159,6 +159,7 @@ export default [
   p23,
   p24,
   p25,
+  p26,
   p27,
   p28,
   p29,
@@ -211,7 +212,6 @@ export default [
   p73,
   p74,
   p75,
-  p76,
   p77,
   p78,
   p79,
@@ -264,5 +264,5 @@ export default [
   p127,
   p129,
   p130,
-  p124,
+  p131,
 ];

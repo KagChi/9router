@@ -144,7 +144,13 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs, clientStatus = null) {
+export function createErrorResult(statusCode, message, resetsAtMs, clientStatusOrHeaders = null) {
+  // 4th arg is overloaded: a number normalises the status the CLIENT sees
+  // (e.g. an unknown model reported as 401 becomes 404); a Headers bag
+  // forwards selected upstream response headers onto the error result.
+  const isHeaders = clientStatusOrHeaders != null && typeof clientStatusOrHeaders === "object";
+  const clientStatus = typeof clientStatusOrHeaders === "number" ? clientStatusOrHeaders : null;
+  const extraHeaders = isHeaders ? clientStatusOrHeaders : null;
   return {
     success: false,
     // The true upstream status, kept for internal classification (fallback
@@ -154,7 +160,7 @@ export function createErrorResult(statusCode, message, resetsAtMs, clientStatus 
     resetsAtMs,
     // What the CLIENT sees, which may be normalised — e.g. an unknown model
     // reported as 401 becomes 404, so callers do not read it as an auth failure.
-    response: errorResponse(clientStatus ?? statusCode, message)
+    response: errorResponse(clientStatus ?? statusCode, message, extraHeaders)
   };
 }
 

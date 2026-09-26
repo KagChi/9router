@@ -30,7 +30,6 @@ import {
   getQoderUsage,
   getAutoClawUsage,
   getLivsceneUsage,
-  getCommandCodeUsage,
 } from "./usage/misc.js";
 
 /**
@@ -69,7 +68,6 @@ const USAGE_HANDLERS = {
   commandcode: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
   autoclaw: (c) => getAutoClawUsage(c.accessToken || c.apiKey, c.proxyOptions),
   livscene: (c) => getLivsceneUsage(c, c.proxyOptions),
-  commandcode: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
 };
 
 // Qoder intl/CN share one usage path: PATs must be exchanged to a job token
