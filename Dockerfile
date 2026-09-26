@@ -3,8 +3,9 @@ ARG BUN_IMAGE=oven/bun:1.4.0-alpine
 FROM ${BUN_IMAGE} AS base
 WORKDIR /app
 
-# Use the official Alpine mirror by default. A repository variable/build arg can
-# override it for environments that require a regional mirror.
+# Default to the CN mirror the fork ships with; override with --build-arg for
+# environments that need a different regional mirror.
+ARG ALPINE_MIRROR=mirrors.aliyun.com
 RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
       sed -i "s|dl-cdn.alpinelinux.org|${ALPINE_MIRROR}|g" /etc/apk/repositories; \
     fi
@@ -25,10 +26,12 @@ RUN bun run build:bun
 FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
 
+ARG ALPINE_MIRROR=mirrors.aliyun.com
 RUN if [ "$ALPINE_MIRROR" != "dl-cdn.alpinelinux.org" ]; then \
       sed -i "s|dl-cdn.alpinelinux.org|${ALPINE_MIRROR}|g" /etc/apk/repositories; \
     fi
 
+ARG APP_VERSION=""
 LABEL org.opencontainers.image.title="9router" \
       org.opencontainers.image.version="${APP_VERSION}"
 
