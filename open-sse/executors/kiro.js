@@ -322,6 +322,10 @@ export class KiroExecutor extends BaseExecutor {
     // reject foreign tokens with 401/403, which DO fall through, so trying
     // q/codewhisperer first is safe for every auth method (CLIRO parity).
 
+    const isCodeWhispererSurface =
+      authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
+    if (!isCodeWhispererSurface) return baseUrls;
+
     const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
     const regionalize = (u) =>
       region && region !== "us-east-1" && u.includes("amazonaws.com")
@@ -330,11 +334,15 @@ export class KiroExecutor extends BaseExecutor {
 
     const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
-    const q = amazon.filter((u) => u.includes("://q."));
-    const remaining = amazon.filter((u) => !u.includes("://q."));
-    return q.length > 0
-      ? [...q, ...remaining, ...others]
-      : [...amazon, ...others];
+    if (authMethod === "api_key") {
+      const q = amazon.filter((u) => u.includes("://q."));
+      const remaining = amazon.filter((u) => !u.includes("://q."));
+      return q.length > 0
+        ? [...q, ...remaining, ...others]
+        : [...amazon, ...others];
+    }
+
+    return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
