@@ -420,11 +420,11 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   const supportedLevels = getThinkingLevels(provider, cleanModel);
   const prior = body.reasoning;
   const priorReasoning = prior && typeof prior === "object" ? prior : null;
-  // Only Claude's adaptive thinking exposes a `display` knob; budget-based
-  // Claude thinking keeps its historical shape (no display field).
-  const display = fmt === "claude-adaptive"
-    ? (typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display)
-    : undefined;
+  // The client's explicit `display` is always honored. An OpenAI-shaped
+  // client's implicit ask (reasoning_effort) only maps to `display` for Claude's
+  // adaptive thinking; budget-based thinking keeps its historical shape.
+  const explicitDisplay = typeof body.thinking?.display === "string" ? body.thinking.display : undefined;
+  const display = explicitDisplay || (fmt === "claude-adaptive" ? intent?.display : undefined);
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels, display);
   if (RESPONSES_TARGETS.has(targetFormat)) nestReasoningEffort(body, priorReasoning);
