@@ -420,8 +420,13 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   const supportedLevels = getThinkingLevels(provider, cleanModel);
   const prior = body.reasoning;
   const priorReasoning = prior && typeof prior === "object" ? prior : null;
+  // Only Claude's adaptive thinking exposes a `display` knob; budget-based
+  // Claude thinking keeps its historical shape (no display field).
+  const display = fmt === "claude-adaptive"
+    ? (typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display)
+    : undefined;
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels);
+  applyFormat(fmt, body, cfg, caps, supportedLevels, display);
   if (RESPONSES_TARGETS.has(targetFormat)) nestReasoningEffort(body, priorReasoning);
   return body;
 }
