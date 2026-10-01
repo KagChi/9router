@@ -758,21 +758,28 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
-      case "commandcode":
-        // Quotas arrive as absolute {used,total,resetAt} rows (array).
-        // No remaining/remainingPercentage fields — the UI computes %.
-        if (Array.isArray(data.quotas)) {
-          data.quotas.forEach((quota) => {
-            if (!quota || typeof quota !== "object") return;
-            normalizedQuotas.push({
-              name: quota.name,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
-            });
+      case "commandcode": {
+        // Absolute {used,total,resetAt} rows — no remaining/remainingPercentage,
+        // the UI derives the bar. The active handler (usage/commandcode.js) emits
+        // an object keyed by row name; the legacy handler (usage/misc.js) emits an
+        // array. Accept both so the tracker never renders empty.
+        const rows = Array.isArray(data.quotas)
+          ? data.quotas
+          : Object.entries(data.quotas || {}).map(([name, quota]) => ({
+              name,
+              ...(quota || {}),
+            }));
+        rows.forEach((quota) => {
+          if (!quota || typeof quota !== "object") return;
+          normalizedQuotas.push({
+            name: quota.name,
+            used: quota.used || 0,
+            total: quota.total || 0,
+            resetAt: quota.resetAt || null,
           });
-        }
+        });
         break;
+      }
 
       default:
         // Generic fallback for unknown providers
