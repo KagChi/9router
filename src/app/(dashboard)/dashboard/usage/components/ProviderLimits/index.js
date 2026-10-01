@@ -1095,6 +1095,8 @@ export default function ProviderLimits() {
           const isCodex = conn.provider === "codex";
           const plan = typeof quota?.plan === "string" ? quota.plan.trim() : "";
           const codexPlan = isCodex && plan && plan.toLowerCase() !== "unknown" ? plan : "";
+          const claudeReset = conn.provider === "claude" ? quota?.raw?.resetCredits : null;
+          const resetLabel = isCodex ? "Codex reset credit" : "Claude limit reset";
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
